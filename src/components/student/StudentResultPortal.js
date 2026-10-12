@@ -550,7 +550,7 @@ const StudentResultPortal = () => {
                   type="text" value={admNo}
                   onChange={e => setAdmNo(e.target.value)}
                   onFocus={() => setAdmFocus(true)} onBlur={() => setAdmFocus(false)}
-                  placeholder="e.g. DIS/2025/001"
+                  placeholder="e.g. SCH/2025/001"
                   style={{ ...S.fi, ...(admFocus ? S.fiFocus : {}) }}
                   autoFocus
                 />

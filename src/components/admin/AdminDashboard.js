@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardAPI, questionSetsAPI, testResultsAPI, adminBroadsheetAPI } from '../../api';
-import Loading from '../common/Loading';
 import { Link } from 'react-router-dom';
 import './admindashboard.css';
 
@@ -117,10 +116,6 @@ const AdminDashboard = () => {
     queryFn: () => adminBroadsheetAPI.getGlobalStats(),
     staleTime: 5 * 60 * 1000,
   });
-
-  const isLoading = statsLoading || assignmentsLoading;
-
-  if (isLoading) return <Loading message="Loading dashboard..." />;
 
   const assignmentsCount = assignmentsData?.data?.length || 0;
   const questionSetsCount = questionSetsData?.data?.length || 0;

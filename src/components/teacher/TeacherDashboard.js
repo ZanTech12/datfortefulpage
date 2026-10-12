@@ -1,7 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardAPI, testsAPI, teacherCAAPI, getAuthData } from '../../api';
-import Loading from '../common/Loading';
 import './TeacherDashboard.css';
 
 /* ── Inline SVG Icon Components ── */
@@ -316,10 +315,6 @@ const TeacherDashboard = () => {
       avatar: login.avatar || login.profileImage || null,
     }));
   }, [lastLogins]);
-
-  const isLoading = loadingAssignments || loadingTests || loadingCA;
-
-  if (isLoading) return <Loading message="Loading dashboard..." />;
 
   const getGreeting = () => {
     const hour = new Date().getHours();

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+        
+            <defs>
+                <clipPath id="clip-shape">
+                    <rect width="100%" height="100%" rx="50%" ry="50%" />
+                </clipPath>
+            </defs>
+        
+		<defs>
+			
+				<filter id="shadow-0" x="-200%" y="-200%" width="500%" height="500%">
+					<feDropShadow
+						dx="0"
+						dy="0.4"
+						stdDeviation="0.5333333333333333"
+						flood-color="#000000"
+						flood-opacity="0.18"
+					/>
+				</filter>
+			
+		</defs>
+        <g clip-path="url(#clip-shape)">
+            
+            <defs>
+                <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#4a154b" /><stop offset="100%" stop-color="#350d36" />
+                </linearGradient>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#bg-grad)" />
+        
+			
+            <g transform="translate(256, 256) scale(15, 15) rotate(0) translate(-8, -8)" opacity="1" style="mix-blend-mode: normal" filter="url(#shadow-0)">
+			<title xmlns="http://www.w3.org/2000/svg" fill="#ffffff">fluent:iot-16-filled</title>
+<path xmlns="http://www.w3.org/2000/svg" fill="#ffffff" d="M12 3.5a1.5 1.5 0 0 1-1.75 1.48l-.623 1.122c.48.412.803 1.004.863 1.672l.66.073a1.5 1.5 0 1 1-.111.994l-.659-.073a2.5 2.5 0 0 1-1.13 1.398l.277.834a1.5 1.5 0 1 1-.949.316l-.278-.834a2.5 2.5 0 0 1-2.199-.855l-1.122.623q.021.122.021.25a1.5 1.5 0 1 1-.507-1.124l1.122-.623a2.5 2.5 0 0 1 .3-2.132l-.768-.767a1.5 1.5 0 1 1 .707-.707l.767.767a2.49 2.49 0 0 1 2.132-.299l.623-1.122A1.5 1.5 0 1 1 12 3.5"/>
+		</g>
+			
+        </g>
+    </svg>

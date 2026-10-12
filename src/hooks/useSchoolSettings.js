@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { siteInfoAPI } from '../services/api';
 
 // ✅ Base URL for constructing media URLs (uploads)
-export const API_BASE_URL = 'https://serverless-jet-ten.vercel.app';
+export const API_BASE_URL = 'http://localhost:5000';
 
 // ✅ Deep-scan any shape (string | {url} | {filename} | nested) for a usable URL
 const findUrlInValue = (value, depth = 0) => {

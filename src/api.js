@@ -1,12 +1,48 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://serverless-jet-ten.vercel.app'; // Your backend URL
+// ✅ Dynamic URL Logic for Network Settings
+const DEFAULT_PROD_URL = 'https://aback-xi.vercel.app';
+const DEFAULT_LOCAL_URL = 'https://aback-xi.vercel.app';
+
+const getDefaultUrl = () => {
+  // 1. Optional build-time override (set REACT_APP_API_URL when building)
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  // 2. Runtime detection: if the app is served from a local address
+  //    (desktop .exe via Electron, or testing the build locally),
+  //    the API is on the local machine — NOT the cloud backend.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return DEFAULT_LOCAL_URL;             // https://aback-xi.vercel.app
+    }
+    // LAN access via IP (e.g. 10.75.46.121) → backend on same machine
+    if (host.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+      return `http://${host}:5000`;
+    }
+  }
+
+  // 3. Deployed on a real domain (okispecial.com.ng etc.) → cloud backend
+  if (process.env.NODE_ENV === 'production') {
+    return DEFAULT_PROD_URL;
+  }
+
+  // 4. Dev server fallback
+  return DEFAULT_LOCAL_URL;
+};
+export const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const customUrl = localStorage.getItem('custom_backend_url');
+    if (customUrl) return customUrl; // 1. Check Network Settings override
+  }
+  return getDefaultUrl(); // 2. Auto-detect or fallback
+};
 
 const api = axios.create({
-
-    baseURL: API_BASE_URL,
-    headers: { 'Content-Type': 'application/json' },
-    
+  baseURL: getApiBaseUrl(),
+  headers: { 'Content-Type': 'application/json' },
 });
 
 // ✅ Export AFTER the create call — at the module's top level
@@ -29,15 +65,40 @@ api.interceptors.request.use(
     }
 );
 
-// Response interceptor for error handling
+// ✅ Response interceptor with Auto-Fallback for Network Errors
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
-        // ✅ Next.js Fix: Ensure this runs only in the browser
+    async (error) => {
+        const originalRequest = error.config;
+        
+        // If Network Error (server unreachable) and we are using a custom URL
+        if (error.code === 'ERR_NETWORK' && typeof window !== 'undefined' && localStorage.getItem('custom_backend_url') && !originalRequest._retried) {
+            console.warn('⚠️ Custom backend unreachable. Falling back to default server...');
+            
+            localStorage.removeItem('custom_backend_url');
+            localStorage.removeItem('custom_backend_ip');
+            localStorage.removeItem('custom_backend_port');
+            
+            api.defaults.baseURL = getDefaultUrl();
+            
+            originalRequest._retried = true;
+            originalRequest.baseURL = getDefaultUrl();
+            return api(originalRequest);
+        }
+        
+        // ✅ FIXED: Only log out on 401s from requests that actually carried
+        //    a token. Anonymous 401s (the app's pre-login page-load calls —
+        //    the "[DEBUG Auth] No token provided" spam) must NOT wipe the
+        //    session or force-reload the page. The old behavior caused a
+        //    reload loop on client devices: page loads → anonymous 401 →
+        //    reload → form cleared mid-login → repeat.
         if (typeof window !== 'undefined' && error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
+            const hadToken = !!error.config?.headers?.Authorization;
+            if (hadToken) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }
@@ -52,15 +113,21 @@ export const authAPI = {
         return response.data;
     },
     
-    // ✅ Added: For Admin and Teacher login
+    // ✅ ADDED: For Admin, SuperAdmin, and Teacher login
     login: async (credentials) => {
         const response = await api.post('/login', credentials);
         return response.data;
     },
     
-    // ✅ Added: For Student login
+    // ✅ ADDED: For Student login
     loginStudent: async (credentials) => {
         const response = await api.post('/login/student', credentials);
+        return response.data;
+    },
+
+    // ✅ Public route for Admin to register using the token
+    registerAdmin: async (registrationData) => {
+        const response = await api.post('/superadmin/register', registrationData);
         return response.data;
     }
 };
@@ -70,23 +137,33 @@ export const authAPI = {
 // ============================================
 export const superAdminAPI = {
     getAllAdmins: async () => {
-        const response = await api.get('/superadmin/admins');
+        // ✅ Updated to match backend route: router.get('/', ...)
+        const response = await api.get('/superadmin');
         return response.data;
     },
-    createAdmin: async (adminData) => {
-        const response = await api.post('/superadmin/admins', adminData);
+    
+    // ✅ CHANGED: Generate token instead of creating account directly
+    generateAdminToken: async (tokenData) => {
+        // ✅ Updated to match backend route: router.post('/generate-token', ...)
+        const response = await api.post('/superadmin/generate-token', tokenData);
         return response.data;
     },
+    
     updateAdmin: async (id, adminData) => {
-        const response = await api.put(`/superadmin/admins/${id}`, adminData);
+        // ✅ Updated to match backend route: router.put('/:id', ...)
+        const response = await api.put(`/superadmin/${id}`, adminData);
         return response.data;
     },
+    
     toggleAdminStatus: async (id) => {
-        const response = await api.patch(`/superadmin/admins/${id}/toggle-status`);
+        // ✅ Updated to match backend route: router.patch('/:id/toggle', ...)
+        const response = await api.patch(`/superadmin/${id}/toggle`);
         return response.data;
     },
+    
     deleteAdmin: async (id) => {
-        const response = await api.delete(`/superadmin/admins/${id}`);
+        // ✅ Updated to match backend route: router.delete('/:id', ...)
+        const response = await api.delete(`/superadmin/${id}`);
         return response.data;
     }
 };
@@ -241,6 +318,11 @@ export const studentsAPI = {
 
     create: async (studentData) => {
         const { admissionNumber, ...dataToSubmit } = studentData;
+        // Only send admissionNumber when explicitly provided (bulk import).
+        // Manual creates leave it out so the backend auto-generates.
+        if (admissionNumber && String(admissionNumber).trim()) {
+            dataToSubmit.admissionNumber = String(admissionNumber).trim();
+        }
         const response = await api.post('/students', dataToSubmit);
         return response.data;
     },
@@ -276,7 +358,7 @@ export const studentsAPI = {
     },
 
     // ==========================================
-    // RESULT ACCESS BLOCKING (NEW)
+    // RESULT ACCESS BLOCKING
     // ==========================================
 
     toggleResultAccess: async (studentId) => {
@@ -303,18 +385,17 @@ export const studentsAPI = {
         return response.data;
     },
 
-       restoreFromRecycleBin: async (id) => {
-        // ✅ FIXED: Changed to PUT /students/restore/:id to match backend route
+    restoreFromRecycleBin: async (id) => {
         const response = await api.put(`/students/restore/${id}`);
         return response.data;
     },
 
-      permanentlyDelete: async (id) => {
-        // ✅ FIXED: URL changed to match the backend route (/students/permanent/:id)
+    permanentlyDelete: async (id) => {
         const response = await api.delete(`/students/permanent/${id}`);
         return response.data;
     },
-        // ==========================================
+
+    // ==========================================
     // PROFILE IMAGE MANAGEMENT (ADMIN)
     // ==========================================
 
@@ -322,7 +403,6 @@ export const studentsAPI = {
         const formData = new FormData();
         formData.append('profileImage', file);
 
-        // ✅ URL changed to match your studentRoutes.js
         const response = await api.post(`/students/${studentId}/profile-image`, formData, {
             ...config, // This allows the progress bar to work
             transformRequest: [(data, headers) => {
@@ -330,16 +410,42 @@ export const studentsAPI = {
                 return data;
             }]
         });
-        
+
         return response.data;
     },
 
     removeProfileImage: async (studentId) => {
-        // ✅ URL changed to match your studentRoutes.js
         const response = await api.delete(`/students/${studentId}/profile-image`);
         return response.data;
     },
+
+    // ==========================================
+    // STUDENT PROMOTION (NEW)
+    // ==========================================
+
+    // Dry-run: returns the full promotion plan without changing anything
+    promotionPreview: async () => {
+        const response = await api.post('/students/promotion/preview');
+        return response.data;
+    },
+
+    // Execute: runs the promotion (all-or-nothing transaction)
+    promoteStudents: async () => {
+        const response = await api.post('/students/promotion/execute');
+        return response.data;
+    },
+
+    // ==========================================
+    // TEMPORARY: one-time counter repair.
+    // Call once after deploying, then remove this method
+    // (and its route) on the next deploy.
+    // ==========================================
+    resetCounter: async () => {
+        const response = await api.post('/students/reset-counter');
+        return response.data;
+    },
 };
+
 // ============================================
 // SUBJECTS API
 // ============================================
@@ -2017,6 +2123,12 @@ export const adminAPI = {
         const response = await api.post('/admin/extend-all-tests', { daysToExtend });
         return response.data;
     },
+
+    // Inside adminAPI object
+convertQuestions: async (rawText) => {
+    const response = await api.post('/admin/convert-questions', { rawText });
+    return response.data;
+}
 };
 
 // ============================================
@@ -2049,7 +2161,7 @@ export const diagnosticsAPI = {
     //     allSessions: [...],
     //     entriesByTermSession: [{
     //       termId, termName, termStatus, sessionId, sessionName,
-    //       count, uniqueSubjects, uniqueStudents, latestCreated, latestUpdated
+    //       count, uniqueSubjects, uniqueStudents, latestCreated, latestUpdate
     //     }, ...],
     //     statusCounts: { draft: 10, submitted: 5, approved: 85 }
     //   }

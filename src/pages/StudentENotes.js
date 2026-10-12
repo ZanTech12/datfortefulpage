@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom'; 
-import { eNotesAPI, subjectsAPI, API_BASE_URL } from '../services/api';
+import { eNotesAPI, subjectsAPI, getApiBaseUrl } from '../services/api'; // ✅ CHANGED: Import getApiBaseUrl
 
 const customStyles = `
   .page-title { font-size: 1.8rem; font-weight: 600; margin-bottom: 4px; }
@@ -105,7 +105,8 @@ export default function StudentENotes() {
 
     // ✅ FULL SCREEN PDF READER (Protected)
     if (activeFile) {
-        const fileUrl = activeFile.fileUrl.startsWith('http') ? activeFile.fileUrl : `${API_BASE_URL}${activeFile.fileUrl}`;
+        // ✅ FIXED: Use getApiBaseUrl() for dynamic URL
+        const fileUrl = activeFile.fileUrl.startsWith('http') ? activeFile.fileUrl : `${getApiBaseUrl()}${activeFile.fileUrl}`;
         const viewUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
 
         return createPortal(
@@ -242,7 +243,7 @@ export default function StudentENotes() {
                                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '28px', width: '28px', borderRadius: '50%', background: '#4f46e5', color: '#fff', fontSize: '0.8rem', fontWeight: '700', marginRight: '12px' }}>
                                         {index + 1}
                                     </span>
-                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0', color: '#1f2937' }}>
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0', color: '#1e2937' }}>
                                         {week.title}
                                     </h3>
                                 </div>

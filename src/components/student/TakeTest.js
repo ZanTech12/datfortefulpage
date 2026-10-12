@@ -145,7 +145,6 @@ const useGlobalStyles = () => {
         border-radius: 8px;
         border: 1px solid rgba(148,163,184,0.25);
       }
-      /* FIT-TO-SCREEN: shrink images on short laptop screens so everything fits */
       .cbt-compact img[src^="data:image"], .cbt-compact img[src^="/uploads/"] {
         max-width: 190px;
         max-height: 150px;
@@ -156,6 +155,13 @@ const useGlobalStyles = () => {
       ::-webkit-scrollbar-thumb{background:rgba(34,197,94,.25);border-radius:8px}
       ::-webkit-scrollbar-thumb:hover{background:rgba(34,197,94,.45)}
       ::selection{background:rgba(34,197,94,.35)}
+      
+      /* MOBILE RESPONSIVE ADJUSTMENTS */
+      @media (max-width: 768px) {
+        .cbt-instr-card, .cbt-review-card { max-width: 95% !important; border-radius: 12px !important; }
+        .cbt-dock { width: 100% !important; max-width: 320px !important; }
+        img[src^="data:image"], img[src^="/uploads/"] { max-width: 140px; max-height: 120px; margin: 4px; }
+      }
     `;
     document.head.appendChild(s);
     return () => { const el = document.getElementById('cbt-pro-styles'); if (el) el.remove(); };
@@ -208,7 +214,7 @@ const Calculator = ({ onClose }) => {
   });
 
   return (
-    <div style={popStyles.dock}>
+    <div style={popStyles.dock} className="cbt-dock">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.9rem', background: `linear-gradient(135deg,${T.greenDeep},#022c16)`, color: '#fff' }}>
         <span style={{ fontWeight: 800, fontSize: '0.68rem', letterSpacing: '2px' }}>🧮 CALCULATOR</span>
         <button onClick={onClose} style={popStyles.dockClose}>✕</button>
@@ -247,7 +253,7 @@ const Calculator = ({ onClose }) => {
 
 // ==================== SCRATCH PAD ====================
 const ScratchPad = ({ value, onChange, onClose }) => (
-  <div style={popStyles.dock}>
+  <div style={popStyles.dock} className="cbt-dock">
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.9rem', background: `linear-gradient(135deg,${T.greenDeep},#022c16)`, color: '#fff' }}>
       <span style={{ fontWeight: 800, fontSize: '0.68rem', letterSpacing: '2px' }}>📝 SCRATCH PAD</span>
       <div style={{ display: 'flex', gap: '6px' }}>
@@ -291,13 +297,13 @@ const InstructionsScreen = ({ test, onStart, onClose }) => {
   ];
   return (
     <div style={{ ...popStyles.overlay, animation: 'fadeIn .25s ease' }}>
-      <div style={popStyles.instrCard}>
+      <div style={popStyles.instrCard} className="cbt-instr-card">
         <div style={{
           padding: '1.6rem 2rem 1.2rem', textAlign: 'center',
           background: `linear-gradient(160deg, rgba(0,102,51,0.35), rgba(2,6,23,0.4))`, borderBottom: `1px solid ${T.border}`,
         }}>
           <div style={{ width: '58px', height: '58px', margin: '0 auto 0.7rem', borderRadius: '16px', background: `linear-gradient(135deg,${T.green},#065f46)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.6rem', boxShadow: `0 8px 24px ${T.green}55` }}>🎓</div>
-          <div style={{ fontWeight: 900, fontSize: '1.25rem', letterSpacing: '5px', color: T.green, textShadow: `0 0 20px ${T.green}55` }}>DISL CBT</div>
+          <div style={{ fontWeight: 900, fontSize: '1.25rem', letterSpacing: '5px', color: T.green, textShadow: `0 0 20px ${T.green}55` }}>BimTech CBT</div>
           <div style={{ fontSize: '0.62rem', color: T.muted, letterSpacing: '3px', marginTop: '2px' }}>EXAMINATION PORTAL · 2025</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.55rem', padding: '1.1rem 2rem' }}>
@@ -340,7 +346,7 @@ const ReviewPanel = ({ test, answers, flagged, timings, onClose, onGoTo, onSubmi
   ];
   return (
     <div style={{ ...popStyles.overlay, animation: 'fadeIn .2s ease' }}>
-      <div style={popStyles.reviewCard}>
+      <div style={popStyles.reviewCard} className="cbt-review-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.1rem 1.4rem', borderBottom: `1px solid ${T.border}`, background: 'rgba(2,6,23,.4)' }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: '0.95rem', color: T.text, letterSpacing: '1px' }}>📝 ANSWER REVIEW</div>
@@ -444,14 +450,19 @@ const TakeTest = () => {
   const [showHint, setShowHint] = useState(true);
   const [hoveredOpt, setHoveredOpt] = useState(null);
   const [showPassage, setShowPassage] = useState(true);
-  // FIT-TO-SCREEN: track viewport height so layout adapts to ANY laptop screen
+  
+  // VIEWPORT TRACKING (Height + Width)
   const [vh, setVh] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 800));
+  const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
+  const [showPaletteMobile, setShowPaletteMobile] = useState(false);
 
   useEffect(() => {
-    const onResize = () => setVh(window.innerHeight);
+    const onResize = () => { setVh(window.innerHeight); setVw(window.innerWidth); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  const isMobile = vw < 768;
 
   useEffect(() => { SoundEngine.enabled = soundOn; SoundEngine.init(); }, [soundOn]);
 
@@ -751,26 +762,25 @@ const TakeTest = () => {
   const isLast = qIndex === total - 1;
 
   // ==================== FIT-TO-SCREEN ADAPTIVE SIZING ====================
-  const compact = vh < 820;    // small/medium laptops (e.g. 1366×768)
-  const tight = vh < 640;      // very short screens
-  const headerMinH = tight ? 46 : compact ? 54 : 60;
-  const headerPad = tight ? '0.35rem 0.7rem' : compact ? '0.45rem 0.85rem' : '0.55rem 1rem';
-  const bodyPad = tight ? '0.5rem 0.7rem' : compact ? '0.7rem 0.85rem' : '0.9rem 1rem';
-  const cardPad = tight ? '0.6rem 1rem 0.7rem' : compact ? '0.9rem 1.2rem 1rem' : '1.4rem 1.6rem 1.6rem';
-  const cardGap = tight ? 6 : compact ? 8 : 12;
-  const optGap = tight ? 4 : compact ? 6 : 8;
-  const optPadY = tight ? '0.22rem' : compact ? '0.3rem' : '0.4rem';
-  const optFont = qFont * (tight ? 0.76 : compact ? 0.82 : 0.88);
-  const letterSize = tight ? 22 : compact ? 26 : 30;
-  const footerPad = tight ? '0.45rem 1rem' : compact ? '0.55rem 1.2rem' : '0.85rem 1.4rem';
+  const compact = !isMobile && vh < 820;    // small/medium laptops (e.g. 1366×768)
+  const tight = !isMobile && vh < 640;      // very short screens
+  const headerMinH = isMobile ? 48 : tight ? 46 : compact ? 54 : 60;
+  const headerPad = isMobile ? '0.5rem 0.8rem' : tight ? '0.35rem 0.7rem' : compact ? '0.45rem 0.85rem' : '0.55rem 1rem';
+  const bodyPad = isMobile ? '0.5rem' : tight ? '0.5rem 0.7rem' : compact ? '0.7rem 0.85rem' : '0.9rem 1rem';
+  const cardPad = isMobile ? '0.75rem 1rem' : tight ? '0.6rem 1rem 0.7rem' : compact ? '0.9rem 1.2rem 1rem' : '1.4rem 1.6rem 1.6rem';
+  const cardGap = isMobile ? 8 : tight ? 6 : compact ? 8 : 12;
+  const optGap = isMobile ? 6 : tight ? 4 : compact ? 6 : 8;
+  const optPadY = isMobile ? '0.45rem' : tight ? '0.22rem' : compact ? '0.3rem' : '0.4rem';
+  const optFont = qFont * (isMobile ? 0.9 : tight ? 0.76 : compact ? 0.82 : 0.88);
+  const letterSize = isMobile ? 26 : tight ? 22 : compact ? 26 : 30;
+  const footerPad = isMobile ? '0.6rem 1rem' : tight ? '0.45rem 1rem' : compact ? '0.55rem 1.2rem' : '0.85rem 1.4rem';
   const paletteW = compact ? '218px' : '264px';
   const paletteGap = compact ? 4 : 6;
-  // ✅ QUESTION CONTAINER: increased by half AGAIN → now 2.25× the original
-  // (1.5× after the first increase, another +50% on top of that now)
-  const qBaseVH = tight ? 20 : compact ? 24 : 28;              // original baseline (vh)
-  const qBoxMinH = `${Math.round(qBaseVH * 2.25)}vh`;          // = 45vh / 54vh / 63vh
-  // ✅ OPTIONS CAP (unchanged from last version — funds the taller question area)
-  const optsMaxH = tight ? '24vh' : '28vh';
+  
+  const qBaseVH = tight ? 20 : compact ? 24 : 28;
+  // On mobile, allow it to be natural, otherwise enforce 2.25x original scaled height
+  const qBoxMinH = isMobile ? 'auto' : `${Math.round(qBaseVH * 2.25)}vh`;
+  const optsMaxH = isMobile ? 'none' : tight ? '24vh' : '28vh';
 
   // ==================== STATES ====================
   if (isLoading) return (
@@ -795,21 +805,21 @@ const TakeTest = () => {
   const optStyle = (oi) => {
     const sel = answers[qIndex] === oi, hov = hoveredOpt === oi;
     return {
-      display: 'flex', alignItems: 'center', gap: compact ? '0.6rem' : '0.85rem',
-      padding: `${optPadY} ${compact ? '0.75rem' : '1rem'}`,
+      display: 'flex', alignItems: 'center', gap: compact || isMobile ? '0.6rem' : '0.85rem',
+      padding: `${optPadY} ${compact || isMobile ? '0.75rem' : '1rem'}`,
       border: `2px solid ${sel ? T.green : hov ? 'rgba(34,197,94,0.4)' : T.border}`,
       background: sel ? `linear-gradient(135deg, rgba(34,197,94,0.18), rgba(4,120,87,0.12))` : hov ? 'rgba(34,197,94,0.06)' : 'rgba(148,163,184,0.04)',
-      borderRadius: compact ? '10px' : '12px', cursor: 'pointer', transition: 'all .18s ease', textAlign: 'left', width: '100%',
+      borderRadius: compact || isMobile ? '10px' : '12px', cursor: 'pointer', transition: 'all .18s ease', textAlign: 'left', width: '100%',
       color: sel ? T.text : '#cbd5e1',
       boxShadow: sel ? `0 4px 16px rgba(34,197,94,0.2)` : 'none',
-      minHeight: 0, maxHeight: tight ? '52px' : '64px', overflowY: 'auto', overflowX: 'hidden',
+      minHeight: 0, maxHeight: tight && !isMobile ? '52px' : '64px', overflowY: 'auto', overflowX: 'hidden',
     };
   };
 
   const letterStyle = (oi) => {
     const sel = answers[qIndex] === oi;
     return {
-      width: `${letterSize}px`, height: `${letterSize}px`, borderRadius: '50%', flexShrink: 0, fontSize: compact ? '0.68rem' : '0.78rem',
+      width: `${letterSize}px`, height: `${letterSize}px`, borderRadius: '50%', flexShrink: 0, fontSize: compact || isMobile ? '0.68rem' : '0.78rem',
       display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, transition: 'all .18s',
       border: `2px solid ${sel ? T.green : 'rgba(148,163,184,0.3)'}`,
       background: sel ? `linear-gradient(135deg,${T.green},#047857)` : 'rgba(148,163,184,0.08)',
@@ -818,10 +828,51 @@ const TakeTest = () => {
     };
   };
 
+  // ==================== PALETTE CONTENT REUSABLE ====================
+  const PaletteContent = (
+    <>
+      <div style={{ padding: '0.9rem 1rem', borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ fontWeight: 900, fontSize: '0.72rem', letterSpacing: '2px', color: T.green }}>🗺️ QUESTIONS</div>
+        <div style={{ fontSize: '0.62rem', color: T.muted, marginTop: '2px' }}>{answeredCount} answered · {total - answeredCount} remaining · {flagged.size} flagged</div>
+      </div>
+      <div style={{ display: 'flex', gap: '4px', padding: '0.6rem 0.8rem', flexWrap: 'wrap' }}>
+        {[['all', 'ALL'], ['answered', '✅ DONE'], ['unanswered', '❌ LEFT'], ['flagged', '🚩 FLAG']].map(([f, label]) => (
+          <button key={f} onClick={() => setFilter(f)} style={{ fontSize: '0.56rem', fontWeight: 800, padding: '0.3rem 0.55rem', borderRadius: '20px', cursor: 'pointer', border: `1px solid ${filter === f ? T.green : T.border}`, background: filter === f ? `${T.green}22` : 'transparent', color: filter === f ? T.green : T.muted, letterSpacing: '0.5px' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.3rem 0.8rem 0.8rem', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: `${paletteGap}px`, alignContent: 'start' }}>
+        {filteredIdx.map(i => {
+          const cur = i === qIndex, ans = answers[i] !== null, flg = flagged.has(i);
+          return (
+            <button key={i} onClick={() => { goto(i); if (isMobile) setShowPaletteMobile(false); }} style={{
+              position: 'relative', padding: compact || isMobile ? '0.4rem 0' : '0.5rem 0', borderRadius: '9px', cursor: 'pointer', fontWeight: 800, fontSize: '0.72rem',
+              border: `1px solid ${cur ? T.green : ans ? `${T.green}55` : flg ? `${T.gold}55` : T.border}`,
+              background: cur ? `linear-gradient(135deg,${T.green},#047857)` : ans ? 'rgba(34,197,94,0.14)' : flg ? 'rgba(245,158,11,0.14)' : 'rgba(148,163,184,0.06)',
+              color: cur ? '#04110a' : ans ? T.green : flg ? T.gold : T.muted,
+              boxShadow: cur ? `0 0 12px ${T.green}66` : 'none', transition: 'all .12s',
+            }}>
+              {i + 1}
+              {flg && <span style={{ position: 'absolute', top: '-5px', right: '-3px', fontSize: '0.55rem' }}>🚩</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px', padding: '0 0.9rem 0.7rem', fontSize: '0.56rem', color: T.dim }}>
+        <span>🟩 Answered</span><span>⬜ Current</span>
+        <span>🟨 Flagged</span><span>▫️ Unanswered</span>
+      </div>
+      <div style={{ padding: '0.8rem', borderTop: `1px solid ${T.border}` }}>
+        <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, width: '100%' }}>SUBMIT TEST</button>
+      </div>
+    </>
+  );
+
   // ==================== MAIN RENDER ====================
   return (
     <div ref={containerRef} data-cbt-root className={compact ? 'cbt-compact' : ''}
-      style={{ height: '100vh', maxHeight: '100vh', background: T.bg, color: T.text, fontFamily: T.font, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      style={{ height: isMobile ? '100dvh' : '100vh', maxHeight: isMobile ? '100dvh' : '100vh', background: T.bg, color: T.text, fontFamily: T.font, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', paddingBottom: isMobile ? '56px' : 0 }}>
       {/* Ambient background glows */}
       <div style={{ position: 'fixed', width: '480px', height: '480px', top: '-160px', right: '-120px', borderRadius: '50%', background: `radial-gradient(circle, ${T.greenDeep}44, transparent 70%)`, filter: 'blur(60px)', animation: 'floatBg 12s ease-in-out infinite', pointerEvents: 'none' }} />
       <div style={{ position: 'fixed', width: '420px', height: '420px', bottom: '-160px', left: '-120px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(56,189,248,0.1), transparent 70%)', filter: 'blur(60px)', animation: 'floatBg 15s ease-in-out infinite reverse', pointerEvents: 'none' }} />
@@ -831,79 +882,95 @@ const TakeTest = () => {
         {/* Logo + subject */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <div style={{ width: compact ? '32px' : '38px', height: compact ? '32px' : '38px', borderRadius: '11px', background: `linear-gradient(135deg,${T.green},#047857)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: compact ? '1rem' : '1.15rem', boxShadow: `0 4px 14px ${T.green}55` }}>🎓</div>
-            <div style={{ lineHeight: 1.15 }}>
-              <div style={{ fontWeight: 900, fontSize: compact ? '0.75rem' : '0.85rem', letterSpacing: '3px', color: T.green }}>DISL CBT</div>
-              <div style={{ fontSize: '0.53rem', color: T.muted, letterSpacing: '2px' }}>EXAMINATION PORTAL</div>
+            <div style={{ width: compact || isMobile ? '32px' : '38px', height: compact || isMobile ? '32px' : '38px', borderRadius: '11px', background: `linear-gradient(135deg,${T.green},#047857)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: compact || isMobile ? '1rem' : '1.15rem', boxShadow: `0 4px 14px ${T.green}55` }}>🎓</div>
+            {!isMobile && (
+              <div style={{ lineHeight: 1.15 }}>
+                <div style={{ fontWeight: 900, fontSize: compact ? '0.75rem' : '0.85rem', letterSpacing: '3px', color: T.green }}>BimTech CBT</div>
+                <div style={{ fontSize: '0.53rem', color: T.muted, letterSpacing: '2px' }}>EXAMINATION PORTAL</div>
+              </div>
+            )}
+          </div>
+          {!isMobile && <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.12)' }} />}
+          {!isMobile && (
+            <div style={{ minWidth: 0, animation: 'fadeUp .4s ease' }}>
+              <div style={{ fontSize: compact ? '0.74rem' : '0.82rem', fontWeight: 800, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📚 {test.subjectId?.name || 'General'}</div>
+              <div style={{ fontSize: '0.6rem', color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{test.title}</div>
             </div>
-          </div>
-          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.12)' }} />
-          <div style={{ minWidth: 0, animation: 'fadeUp .4s ease' }}>
-            <div style={{ fontSize: compact ? '0.74rem' : '0.82rem', fontWeight: 800, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📚 {test.subjectId?.name || 'General'}</div>
-            <div style={{ fontSize: '0.6rem', color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{test.title}</div>
-          </div>
+          )}
         </div>
 
         {/* Right cluster */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-          {savedAt && (
+          {!isMobile && savedAt && (
             <div style={{ fontSize: '0.58rem', color: T.green, background: `${T.green}14`, border: `1px solid ${T.green}33`, padding: '0.25rem 0.55rem', borderRadius: '20px', fontWeight: 700, animation: 'fadeIn .3s ease' }}>
               💾 Saved {savedAt.toLocaleTimeString()}
             </div>
           )}
 
-          {/* Tools */}
-          {[
-            { icon: soundOn ? '🔊' : '🔇', fn: () => setSoundOn(s => !s), title: 'Sound' },
-            { icon: <span style={{ fontSize: '0.62rem', fontWeight: 900 }}>A{['₋', ' ', '+'][fontStep]}</span>, fn: () => setFontStep(s => (s + 1) % 3), title: 'Font size' },
-            { icon: '🧮', fn: () => { setShowCalc(s => !s); setShowScratch(false); }, title: 'Calculator', active: showCalc },
-            { icon: '📝', fn: () => { setShowScratch(s => !s); setShowCalc(false); }, title: 'Scratch pad', active: showScratch },
-            { icon: isFs ? '🗗' : '⛶', fn: () => (isFs ? jsExitFs() : jsEnterFs()), title: 'Fullscreen (F)' },
-          ].map((b, i) => (
-            <button key={i} onClick={b.fn} title={b.title} style={{
-              background: b.active ? `${T.greenDeep}88` : 'rgba(255,255,255,0.06)',
-              border: `1px solid ${b.active ? T.green : 'rgba(255,255,255,0.1)'}`,
-              color: '#fff', cursor: 'pointer', padding: compact ? '0.32rem 0.5rem' : '0.42rem 0.58rem', borderRadius: '9px',
-              fontSize: compact ? '0.75rem' : '0.85rem', display: 'flex', alignItems: 'center', transition: 'all .15s',
-            }}>{b.icon}</button>
-          ))}
+          {/* Tools hidden on mobile (moved to bottom bar) */}
+          {!isMobile && (
+            <>
+              {[
+                { icon: soundOn ? '🔊' : '🔇', fn: () => setSoundOn(s => !s), title: 'Sound' },
+                { icon: <span style={{ fontSize: '0.62rem', fontWeight: 900 }}>A{['₋', ' ', '+'][fontStep]}</span>, fn: () => setFontStep(s => (s + 1) % 3), title: 'Font size' },
+                { icon: '🧮', fn: () => { setShowCalc(s => !s); setShowScratch(false); }, title: 'Calculator', active: showCalc },
+                { icon: '📝', fn: () => { setShowScratch(s => !s); setShowCalc(false); }, title: 'Scratch pad', active: showScratch },
+                { icon: isFs ? '🗗' : '⛶', fn: () => (isFs ? jsExitFs() : jsEnterFs()), title: 'Fullscreen (F)' },
+              ].map((b, i) => (
+                <button key={i} onClick={b.fn} title={b.title} style={{
+                  background: b.active ? `${T.greenDeep}88` : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${b.active ? T.green : 'rgba(255,255,255,0.1)'}`,
+                  color: '#fff', cursor: 'pointer', padding: compact ? '0.32rem 0.5rem' : '0.42rem 0.58rem', borderRadius: '9px',
+                  fontSize: compact ? '0.75rem' : '0.85rem', display: 'flex', alignItems: 'center', transition: 'all .15s',
+                }}>{b.icon}</button>
+              ))}
+            </>
+          )}
 
-          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.12)' }} />
+          {!isMobile && <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.12)' }} />}
 
           {/* TIMER RING */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Ring pct={frac} size={compact ? 40 : 46} stroke={4} color={urgColor} animate={frac <= 0.1}>
-              <span style={{ fontFamily: T.mono, fontSize: compact ? '0.53rem' : '0.6rem', fontWeight: 800, color: urgColor }}>{fmtTime(timeLeft)}</span>
+            <Ring pct={frac} size={isMobile ? 34 : compact ? 40 : 46} stroke={4} color={urgColor} animate={frac <= 0.1}>
+              <span style={{ fontFamily: T.mono, fontSize: isMobile ? '0.5rem' : compact ? '0.53rem' : '0.6rem', fontWeight: 800, color: urgColor }}>{fmtTime(timeLeft)}</span>
             </Ring>
-            <div style={{ lineHeight: 1.2 }}>
-              <div style={{ fontSize: '0.55rem', color: T.muted, letterSpacing: '1.5px', fontWeight: 700 }}>TIME LEFT</div>
-              <div style={{ fontFamily: T.mono, fontSize: compact ? '0.92rem' : '1.05rem', fontWeight: 800, color: urgColor, textShadow: `0 0 12px ${urgColor}55`, animation: frac <= 0.1 ? 'blink 1s infinite' : 'none' }}>{fmtTime(timeLeft)}</div>
-            </div>
+            {!isMobile && (
+              <div style={{ lineHeight: 1.2 }}>
+                <div style={{ fontSize: '0.55rem', color: T.muted, letterSpacing: '1.5px', fontWeight: 700 }}>TIME LEFT</div>
+                <div style={{ fontFamily: T.mono, fontSize: compact ? '0.92rem' : '1.05rem', fontWeight: 800, color: urgColor, textShadow: `0 0 12px ${urgColor}55`, animation: frac <= 0.1 ? 'blink 1s infinite' : 'none' }}>{fmtTime(timeLeft)}</div>
+              </div>
+            )}
           </div>
 
           {/* Candidate + Review + Submit */}
-          <button onClick={() => setShowCandidate(true)} title="Candidate details" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', cursor: 'pointer', padding: compact ? '0.32rem 0.5rem' : '0.42rem 0.58rem', borderRadius: '9px', fontSize: compact ? '0.75rem' : '0.85rem', display: 'flex', alignItems: 'center' }}>👤</button>
-          <button onClick={() => setShowReview(true)} style={{ background: 'linear-gradient(135deg,#0e7490,#155e75)', color: '#fff', border: 'none', cursor: 'pointer', padding: compact ? '0.38rem 0.7rem' : '0.5rem 0.9rem', borderRadius: '9px', fontWeight: 800, fontSize: compact ? '0.62rem' : '0.7rem', letterSpacing: '1px', boxShadow: '0 4px 14px rgba(14,116,144,0.4)', whiteSpace: 'nowrap' }}>
-            📋 REVIEW {answeredCount}/{total}
-          </button>
-          <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, padding: compact ? '0.38rem 0.8rem' : '0.5rem 1rem', fontSize: compact ? '0.64rem' : '0.72rem', whiteSpace: 'nowrap' }}>🏁 SUBMIT</button>
+          {!isMobile && <button onClick={() => setShowCandidate(true)} title="Candidate details" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', cursor: 'pointer', padding: compact ? '0.32rem 0.5rem' : '0.42rem 0.58rem', borderRadius: '9px', fontSize: compact ? '0.75rem' : '0.85rem', display: 'flex', alignItems: 'center' }}>👤</button>}
+          
+          {isMobile ? (
+            <button onClick={() => setShowReview(true)} style={{ background: 'rgba(14,116,144,0.4)', color: '#fff', border: `1px solid ${T.blue}44`, cursor: 'pointer', padding: '0.4rem 0.6rem', borderRadius: '9px', fontSize: '0.8rem' }}>📋</button>
+          ) : (
+            <button onClick={() => setShowReview(true)} style={{ background: 'linear-gradient(135deg,#0e7490,#155e75)', color: '#fff', border: 'none', cursor: 'pointer', padding: compact ? '0.38rem 0.7rem' : '0.5rem 0.9rem', borderRadius: '9px', fontWeight: 800, fontSize: compact ? '0.62rem' : '0.7rem', letterSpacing: '1px', boxShadow: '0 4px 14px rgba(14,116,144,0.4)', whiteSpace: 'nowrap' }}>
+              📋 REVIEW {answeredCount}/{total}
+            </button>
+          )}
+          
+          <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, padding: isMobile ? '0.4rem 0.8rem' : compact ? '0.38rem 0.8rem' : '0.5rem 1rem', fontSize: isMobile ? '0.68rem' : compact ? '0.64rem' : '0.72rem', whiteSpace: 'nowrap' }}>🏁 {isMobile ? '' : 'SUBMIT'}</button>
         </div>
       </header>
 
       {/* ============ MAIN BODY ============ */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: bodyPad, gap: compact ? '0.7rem' : '1rem', minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: bodyPad, gap: isMobile ? 0 : (compact ? '0.7rem' : '1rem'), flexDirection: isMobile ? 'column' : 'row', minHeight: 0 }}>
 
         {/* ===== QUESTION CARD ===== */}
-        <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: T.surface, backdropFilter: 'blur(20px)', border: `1px solid ${T.border}`, borderRadius: '18px', overflow: 'hidden' }}>
+        <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: T.surface, backdropFilter: 'blur(20px)', border: `1px solid ${T.border}`, borderRadius: isMobile ? '12px' : '18px', overflow: 'hidden' }}>
 
           {/* Passage (collapsible) */}
           {q?.passageText && (
-            <div style={{ margin: compact ? '0.6rem 1rem 0' : '1rem 1.6rem 0', flexShrink: 0 }}>
-              <button onClick={() => setShowPassage(s => !s)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '10px', padding: compact ? '0.4rem 0.8rem' : '0.55rem 0.9rem', cursor: 'pointer', color: T.blue, fontWeight: 800, fontSize: compact ? '0.64rem' : '0.72rem', letterSpacing: '1px' }}>
+            <div style={{ margin: isMobile ? '0.5rem 1rem 0' : compact ? '0.6rem 1rem 0' : '1rem 1.6rem 0', flexShrink: 0 }}>
+              <button onClick={() => setShowPassage(s => !s)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '10px', padding: compact || isMobile ? '0.4rem 0.8rem' : '0.55rem 0.9rem', cursor: 'pointer', color: T.blue, fontWeight: 800, fontSize: compact || isMobile ? '0.64rem' : '0.72rem', letterSpacing: '1px' }}>
                 <span>📖 PASSAGE</span><span>{showPassage ? '▲' : '▼'}</span>
               </button>
               {showPassage && (
-                <div style={{ marginTop: '0.5rem', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: '12px', padding: compact ? '0.6rem 0.9rem' : '1rem 1.2rem', fontSize: compact ? '0.78rem' : '0.88rem', lineHeight: 1.7, color: '#dbeafe', maxHeight: compact ? '110px' : '170px', overflowY: 'auto' }}
+                <div style={{ marginTop: '0.5rem', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: '12px', padding: compact || isMobile ? '0.6rem 0.9rem' : '1rem 1.2rem', fontSize: compact || isMobile ? '0.78rem' : '0.88rem', lineHeight: 1.7, color: '#dbeafe', maxHeight: compact || isMobile ? '110px' : '170px', overflowY: 'auto' }}
                   dangerouslySetInnerHTML={{ __html: formatMathText(q.passageText) }} />
               )}
             </div>
@@ -915,7 +982,7 @@ const TakeTest = () => {
             {/* Question meta row */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <span style={{ background: `${T.green}1c`, color: T.green, border: `1px solid ${T.green}44`, fontWeight: 900, fontSize: compact ? '0.62rem' : '0.7rem', letterSpacing: '1px', padding: compact ? '0.28rem 0.65rem' : '0.35rem 0.8rem', borderRadius: '8px' }}>
+                <span style={{ background: `${T.green}1c`, color: T.green, border: `1px solid ${T.green}44`, fontWeight: 900, fontSize: compact || isMobile ? '0.62rem' : '0.7rem', letterSpacing: '1px', padding: compact || isMobile ? '0.28rem 0.65rem' : '0.35rem 0.8rem', borderRadius: '8px' }}>
                   QUESTION {qIndex + 1} OF {total}
                 </span>
                 {flagged.has(qIndex) && (
@@ -923,13 +990,12 @@ const TakeTest = () => {
                 )}
                 {timings[qIndex] !== undefined && <span style={{ fontSize: '0.6rem', color: T.dim }}>⏱ {fmtSecs(timings[qIndex])} here</span>}
               </div>
-              <button onClick={toggleFlag} style={{ background: flagged.has(qIndex) ? 'rgba(245,158,11,0.15)' : 'rgba(148,163,184,0.06)', border: `1px solid ${flagged.has(qIndex) ? T.gold : T.border}`, color: flagged.has(qIndex) ? T.gold : T.muted, borderRadius: '9px', padding: compact ? '0.3rem 0.7rem' : '0.4rem 0.85rem', cursor: 'pointer', fontWeight: 800, fontSize: compact ? '0.6rem' : '0.68rem', letterSpacing: '1px', transition: 'all .15s' }}>
+              <button onClick={toggleFlag} style={{ background: flagged.has(qIndex) ? 'rgba(245,158,11,0.15)' : 'rgba(148,163,184,0.06)', border: `1px solid ${flagged.has(qIndex) ? T.gold : T.border}`, color: flagged.has(qIndex) ? T.gold : T.muted, borderRadius: '9px', padding: compact || isMobile ? '0.3rem 0.7rem' : '0.4rem 0.85rem', cursor: 'pointer', fontWeight: 800, fontSize: compact || isMobile ? '0.6rem' : '0.68rem', letterSpacing: '1px', transition: 'all .15s' }}>
                 {flagged.has(qIndex) ? '🚩 UNFLAG' : '🚩 FLAG'}
               </button>
             </div>
 
-            {/* ✅ QUESTION CONTAINER — now 2.25× original (original + ½ + ½).
-                Picture on top, text under it, same box. */}
+            {/* QUESTION CONTAINER */}
             {(() => {
               const { images, clean } = splitImagesFromText(q.questionText);
               const hasImages = images.length > 0;
@@ -937,9 +1003,9 @@ const TakeTest = () => {
                 <div style={{
                   minHeight: qBoxMinH,
                   background: 'rgba(2,6,23,0.45)', border: `1px solid ${T.border}`, borderRadius: '14px',
-                  padding: compact ? '0.6rem' : '0.9rem',
+                  padding: compact || isMobile ? '0.6rem' : '0.9rem',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  gap: clean ? (compact ? '0.4rem' : '0.6rem') : 0,
+                  gap: clean ? (compact || isMobile ? '0.4rem' : '0.6rem') : 0,
                 }}>
                   {/* picture(s) on top of the box */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px', lineHeight: 0 }}>
@@ -949,25 +1015,25 @@ const TakeTest = () => {
                   </div>
                   {/* text UNDER the picture — same box */}
                   {clean && (
-                    <div style={{ width: '100%', textAlign: 'center', fontSize: `${qFont}rem`, color: '#e2e8f0', lineHeight: compact ? 1.55 : 1.7, fontWeight: 500 }}
+                    <div style={{ width: '100%', textAlign: 'center', fontSize: `${qFont}rem`, color: '#e2e8f0', lineHeight: compact || isMobile ? 1.55 : 1.7, fontWeight: 500 }}
                       dangerouslySetInnerHTML={{ __html: formatMathText(clean) }} />
                   )}
                 </div>
               ) : (
                 clean && (
-                  <div style={{ minHeight: qBoxMinH, display: 'flex', alignItems: 'flex-start', fontSize: `${qFont}rem`, color: '#e2e8f0', lineHeight: compact ? 1.55 : 1.75, fontWeight: 500, animation: 'fadeUp .3s ease' }}
+                  <div style={{ minHeight: qBoxMinH, display: 'flex', alignItems: 'flex-start', fontSize: `${qFont}rem`, color: '#e2e8f0', lineHeight: compact || isMobile ? 1.55 : 1.75, fontWeight: 500, animation: 'fadeUp .3s ease' }}
                     dangerouslySetInnerHTML={{ __html: formatMathText(clean) }} />
                 )
               );
             })()}
           </div>
 
-          {/* COMPACT OPTIONS — 2 per line, natural height, capped (unchanged) */}
-          <div style={{ flexShrink: 0, maxHeight: optsMaxH, overflowY: 'auto', padding: compact ? '0.4rem 1.2rem 0.8rem' : '0.3rem 1.6rem 1.2rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: `${optGap}px` }}>
+          {/* COMPACT OPTIONS — 1 per line on mobile, 2 per line on desktop */}
+          <div style={{ flexShrink: 0, maxHeight: optsMaxH, overflowY: 'auto', padding: isMobile ? '0.4rem 1rem 0.8rem' : compact ? '0.4rem 1.2rem 0.8rem' : '0.3rem 1.6rem 1.2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: `${optGap}px` }}>
               {(q.options || []).map((opt, oi) => {
                 const count = (q.options || []).length;
-                const oddLast = count % 2 === 1 && oi === count - 1; // lone option (e.g. E) takes full row
+                const oddLast = count % 2 === 1 && oi === count - 1 && !isMobile; // lone option takes full row on desktop
                 return (
                   <button key={oi} onClick={() => choose(oi)}
                     style={{ ...optStyle(oi), gridColumn: oddLast ? 'span 2' : undefined }}
@@ -983,71 +1049,59 @@ const TakeTest = () => {
 
           {/* Question nav footer */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.7rem', padding: footerPad, borderTop: `1px solid ${T.border}`, background: 'rgba(2,6,23,0.45)', flexShrink: 0 }}>
-            <button onClick={prev} disabled={qIndex === 0} style={{ padding: compact ? '0.45rem 0.9rem' : '0.6rem 1.2rem', borderRadius: '10px', cursor: qIndex === 0 ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: compact ? '0.66rem' : '0.75rem', letterSpacing: '1px', border: `1px solid ${T.border}`, background: 'rgba(148,163,184,0.06)', color: qIndex === 0 ? T.dim : '#cbd5e1', opacity: qIndex === 0 ? 0.5 : 1 }}>
+            <button onClick={prev} disabled={qIndex === 0} style={{ padding: isMobile ? '0.45rem 0.8rem' : compact ? '0.45rem 0.9rem' : '0.6rem 1.2rem', borderRadius: '10px', cursor: qIndex === 0 ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: isMobile ? '0.66rem' : compact ? '0.66rem' : '0.75rem', letterSpacing: '1px', border: `1px solid ${T.border}`, background: 'rgba(148,163,184,0.06)', color: qIndex === 0 ? T.dim : '#cbd5e1', opacity: qIndex === 0 ? 0.5 : 1 }}>
               ← PREV
             </button>
             <div style={{ fontSize: '0.68rem', color: T.muted, fontWeight: 700, textAlign: 'center', letterSpacing: '1px' }}>
               <span style={{ color: T.green }}>{answeredCount}</span>/{total} ANSWERED
             </div>
             {isLast ? (
-              <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, padding: compact ? '0.45rem 1rem' : '0.6rem 1.3rem' }}>🏁 FINISH & SUBMIT →</button>
+              <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, padding: isMobile ? '0.45rem 0.9rem' : compact ? '0.45rem 1rem' : '0.6rem 1.3rem' }}>🏁 FINISH →</button>
             ) : (
-              <button onClick={next} style={{ padding: compact ? '0.45rem 1rem' : '0.6rem 1.3rem', borderRadius: '10px', cursor: 'pointer', fontWeight: 900, fontSize: compact ? '0.66rem' : '0.75rem', letterSpacing: '1px', border: 'none', background: `linear-gradient(135deg,${T.green},#047857)`, color: '#04110a', boxShadow: `0 5px 16px ${T.green}44` }}>
+              <button onClick={next} style={{ padding: isMobile ? '0.45rem 0.9rem' : compact ? '0.45rem 1rem' : '0.6rem 1.3rem', borderRadius: '10px', cursor: 'pointer', fontWeight: 900, fontSize: isMobile ? '0.66rem' : compact ? '0.66rem' : '0.75rem', letterSpacing: '1px', border: 'none', background: `linear-gradient(135deg,${T.green},#047857)`, color: '#04110a', boxShadow: `0 5px 16px ${T.green}44` }}>
                 NEXT →
               </button>
             )}
           </div>
         </main>
 
-        {/* ===== QUESTION PALETTE ===== */}
-        <aside style={{ width: paletteW, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, backdropFilter: 'blur(20px)', border: `1px solid ${T.border}`, borderRadius: '18px', overflow: 'hidden' }}>
-          <div style={{ padding: '0.9rem 1rem', borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ fontWeight: 900, fontSize: '0.72rem', letterSpacing: '2px', color: T.green }}>🗺️ QUESTIONS</div>
-            <div style={{ fontSize: '0.62rem', color: T.muted, marginTop: '2px' }}>{answeredCount} answered · {total - answeredCount} remaining · {flagged.size} flagged</div>
-          </div>
-
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: '4px', padding: '0.6rem 0.8rem', flexWrap: 'wrap' }}>
-            {[['all', 'ALL'], ['answered', '✅ DONE'], ['unanswered', '❌ LEFT'], ['flagged', '🚩 FLAG']].map(([f, label]) => (
-              <button key={f} onClick={() => setFilter(f)} style={{ fontSize: '0.56rem', fontWeight: 800, padding: '0.3rem 0.55rem', borderRadius: '20px', cursor: 'pointer', border: `1px solid ${filter === f ? T.green : T.border}`, background: filter === f ? `${T.green}22` : 'transparent', color: filter === f ? T.green : T.muted, letterSpacing: '0.5px' }}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Number grid */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0.3rem 0.8rem 0.8rem', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: `${paletteGap}px`, alignContent: 'start' }}>
-            {filteredIdx.map(i => {
-              const cur = i === qIndex, ans = answers[i] !== null, flg = flagged.has(i);
-              return (
-                <button key={i} onClick={() => goto(i)} style={{
-                  position: 'relative', padding: compact ? '0.4rem 0' : '0.5rem 0', borderRadius: '9px', cursor: 'pointer', fontWeight: 800, fontSize: '0.72rem',
-                  border: `1px solid ${cur ? T.green : ans ? `${T.green}55` : flg ? `${T.gold}55` : T.border}`,
-                  background: cur ? `linear-gradient(135deg,${T.green},#047857)` : ans ? 'rgba(34,197,94,0.14)' : flg ? 'rgba(245,158,11,0.14)' : 'rgba(148,163,184,0.06)',
-                  color: cur ? '#04110a' : ans ? T.green : flg ? T.gold : T.muted,
-                  boxShadow: cur ? `0 0 12px ${T.green}66` : 'none', transition: 'all .12s',
-                }}>
-                  {i + 1}
-                  {flg && <span style={{ position: 'absolute', top: '-5px', right: '-3px', fontSize: '0.55rem' }}>🚩</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Legend */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px', padding: '0 0.9rem 0.7rem', fontSize: '0.56rem', color: T.dim }}>
-            <span>🟩 Answered</span><span>⬜ Current</span>
-            <span>🟨 Flagged</span><span>▫️ Unanswered</span>
-          </div>
-
-          <div style={{ padding: '0.8rem', borderTop: `1px solid ${T.border}` }}>
-            <button onClick={() => setShowConfirm(true)} style={{ ...popStyles.dangerBtn, width: '100%' }}>SUBMIT TEST</button>
-          </div>
-        </aside>
+        {/* ===== QUESTION PALETTE (Desktop Only) ===== */}
+        {!isMobile && (
+          <aside style={{ width: paletteW, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, backdropFilter: 'blur(20px)', border: `1px solid ${T.border}`, borderRadius: '18px', overflow: 'hidden' }}>
+            {PaletteContent}
+          </aside>
+        )}
       </div>
 
+      {/* ===== MOBILE BOTTOM TOOLBAR ===== */}
+      {isMobile && (
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: '56px', display: 'flex', justifyContent: 'space-around', alignItems: 'center', background: 'rgba(2,6,23,0.98)', backdropFilter: 'blur(12px)', borderTop: `1px solid ${T.border}`, zIndex: 200, boxShadow: '0 -4px 20px rgba(0,0,0,0.5)' }}>
+          <button onClick={() => setSoundOn(s => !s)} style={mBtnStyle}>{soundOn ? '🔊' : '🔇'}</button>
+          <button onClick={() => setFontStep(s => (s + 1) % 3)} style={{...mBtnStyle, fontSize: '0.75rem'}}>A{['₋', ' ', '+'][fontStep]}</button>
+          <button onClick={() => { setShowCalc(s => !s); setShowScratch(false); }} style={{...mBtnStyle, color: showCalc ? T.green : '#fff'}}>🧮</button>
+          <button onClick={() => { setShowScratch(s => !s); setShowCalc(false); }} style={{...mBtnStyle, color: showScratch ? T.green : '#fff'}}>📝</button>
+          <button onClick={() => setShowPaletteMobile(true)} style={mBtnStyle}>🗺️</button>
+          <button onClick={() => (isFs ? jsExitFs() : jsEnterFs())} style={mBtnStyle}>{isFs ? '🗗' : '⛶'}</button>
+        </div>
+      )}
+
+      {/* ===== MOBILE PALETTE DRAWER ===== */}
+      {isMobile && showPaletteMobile && (
+        <div style={{ ...popStyles.overlay, alignItems: 'flex-end', padding: 0, background: 'rgba(0,0,0,0.6)' }} onClick={() => setShowPaletteMobile(false)}>
+          <div style={{ background: T.surface, width: '100%', maxHeight: '75vh', borderRadius: '18px 18px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: `1px solid ${T.border}`, animation: 'fadeUp .25s ease' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 1.2rem', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontWeight: 900, color: T.green, letterSpacing: '1px' }}>QUESTIONS MAP</span>
+              <button onClick={() => setShowPaletteMobile(false)} style={popStyles.dockCloseDark}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+              {PaletteContent}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Shortcut hint */}
-      {showHint && started && !showTabWarn && (
+      {showHint && started && !showTabWarn && !isMobile && (
         <div style={{ position: 'fixed', bottom: '14px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(2,6,23,0.92)', border: `1px solid ${T.green}44`, borderRadius: '30px', padding: '0.45rem 1.1rem', fontSize: '0.63rem', color: T.muted, zIndex: 900, animation: 'fadeUp .4s ease', whiteSpace: 'nowrap', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
           💡 <b style={{ color: T.green }}>A–E</b> select · <b style={{ color: T.green }}>←/→</b> navigate · <b style={{ color: T.green }}>S</b> review · <b style={{ color: T.green }}>F</b> fullscreen
         </div>
@@ -1055,7 +1109,7 @@ const TakeTest = () => {
 
       {/* Floating docks */}
       {(showCalc || showScratch) && (
-        <div style={{ position: 'fixed', bottom: '60px', right: '14px', zIndex: 1500 }}>
+        <div style={{ position: 'fixed', bottom: isMobile ? '64px' : '60px', right: isMobile ? '0' : '14px', left: isMobile ? '0' : 'auto', display: 'flex', justifyContent: 'center', padding: isMobile ? '0 1rem' : 0, zIndex: 1500 }}>
           {showCalc && <Calculator onClose={() => setShowCalc(false)} />}
           {showScratch && <ScratchPad value={scratch} onChange={setScratch} onClose={() => setShowScratch(false)} />}
         </div>
@@ -1074,7 +1128,7 @@ const TakeTest = () => {
       {/* ============ CONFIRM SUBMIT ============ */}
       {showConfirm && (
         <div style={{ ...popStyles.overlay, animation: 'fadeIn .2s ease' }}>
-          <div style={{ ...popStyles.reviewCard, maxWidth: '430px', textAlign: 'center', padding: '2rem 1.8rem' }}>
+          <div style={{ ...popStyles.reviewCard, maxWidth: '430px', textAlign: 'center', padding: isMobile ? '1.5rem 1.2rem' : '2rem 1.8rem' }} className="cbt-review-card">
             <div style={{ fontSize: '2.6rem', marginBottom: '0.5rem' }}>🏁</div>
             <div style={{ fontWeight: 900, fontSize: '1.05rem', letterSpacing: '2px', color: T.text, marginBottom: '0.7rem' }}>SUBMIT YOUR TEST?</div>
             <div style={{ fontSize: '0.82rem', color: T.muted, lineHeight: 1.75, marginBottom: '1.3rem' }}>
@@ -1082,7 +1136,7 @@ const TakeTest = () => {
               {total - answeredCount > 0 && (<><br /><span style={{ color: T.gold }}>{total - answeredCount} unanswered will be marked wrong.</span></>)}
               <br />You <b style={{ color: T.red }}>cannot</b> retake this test.
             </div>
-            <div style={{ display: 'flex', gap: '0.7rem', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.7rem', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => setShowConfirm(false)} disabled={submitMutation.isPending} style={popStyles.ghostBtn}>← KEEP WORKING</button>
               <button onClick={doSubmit} disabled={submitMutation.isPending} style={{ ...popStyles.ctaBtn, background: submitMutation.isPending ? 'rgba(148,163,184,0.3)' : `linear-gradient(135deg,${T.green},#047857)`, boxShadow: submitMutation.isPending ? 'none' : `0 8px 24px ${T.green}44` }}>
                 {submitMutation.isPending ? '⏳ SUBMITTING…' : '✓ SUBMIT NOW'}
@@ -1095,7 +1149,7 @@ const TakeTest = () => {
       {/* ============ TAB SWITCH WARNING + AUTO-SUBMIT ============ */}
       {showTabWarn && (
         <div style={{ ...popStyles.overlay, animation: 'fadeIn .2s ease', zIndex: 3000 }}>
-          <div style={{ ...popStyles.reviewCard, maxWidth: '450px', textAlign: 'center', padding: '2rem 1.8rem', borderColor: 'rgba(239,68,68,0.4)', animation: 'popIn .25s ease' }}>
+          <div style={{ ...popStyles.reviewCard, maxWidth: '450px', textAlign: 'center', padding: isMobile ? '1.5rem 1.2rem' : '2rem 1.8rem', borderColor: 'rgba(239,68,68,0.4)', animation: 'popIn .25s ease' }} className="cbt-review-card">
             <div style={{ width: '66px', height: '66px', margin: '0 auto 1rem', borderRadius: '18px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.9rem', boxShadow: '0 8px 26px rgba(239,68,68,0.5)', animation: 'pulseGlow 1.2s infinite' }}>⚠️</div>
             <div style={{ fontWeight: 900, fontSize: '1.02rem', letterSpacing: '2px', color: T.red, marginBottom: '0.7rem' }}>TAB SWITCH DETECTED!</div>
             <div style={{ fontSize: '0.84rem', color: '#cbd5e1', lineHeight: 1.75, marginBottom: '1.2rem' }}>
@@ -1111,7 +1165,7 @@ const TakeTest = () => {
       {/* ============ CANDIDATE POPUP ============ */}
       {showCandidate && (
         <div style={{ ...popStyles.overlay, animation: 'fadeIn .2s ease' }} onClick={() => setShowCandidate(false)}>
-          <div style={{ ...popStyles.reviewCard, maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+          <div style={{ ...popStyles.reviewCard, maxWidth: '400px' }} className="cbt-review-card" onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.1rem 1.4rem', borderBottom: `1px solid ${T.border}`, background: 'rgba(2,6,23,.4)' }}>
               <div style={{ fontWeight: 900, fontSize: '0.95rem', color: T.text, letterSpacing: '1px' }}>👤 CANDIDATE DETAILS</div>
               <button onClick={() => setShowCandidate(false)} style={popStyles.dockCloseDark}>✕</button>
@@ -1129,6 +1183,20 @@ const TakeTest = () => {
       )}
     </div>
   );
+};
+
+const mBtnStyle = {
+  background: 'rgba(255,255,255,0.06)',
+  border: 'none',
+  color: '#fff',
+  width: '40px',
+  height: '40px',
+  borderRadius: '10px',
+  fontSize: '1.15rem',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer'
 };
 
 export default TakeTest;

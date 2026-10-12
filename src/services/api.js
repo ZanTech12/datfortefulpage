@@ -1,41 +1,119 @@
 import axios from 'axios';
 
-export const API_BASE_URL = 'https://serverless-jet-ten.vercel.app'; // Your backend URL
+// ✅ Dynamic URL Logic for Network Settings
+const DEFAULT_PROD_URL = 'https://aback-xi.vercel.app';
+const DEFAULT_LOCAL_URL = 'https://aback-xi.vercel.app';
+
+const getDefaultUrl = () => {
+  // 1. Optional build-time override
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  // 2. ✅ FIXED: Local access FIRST (desktop .exe, localhost, or LAN IP)
+  //    → local backend. The old version checked production mode first,
+  //    which sent the packaged .exe to the cloud backend (Render) and
+  //    caused 401s on every component using this module.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return DEFAULT_LOCAL_URL;
+    }
+    // LAN access via IP (e.g. 10.75.46.121) → backend on same machine
+    if (host.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+      return `http://${host}:5000`;
+    }
+  }
+
+  // 3. Real domain deployment (okispecial.com.ng etc.) → cloud backend
+  if (process.env.NODE_ENV === 'production') {
+    return DEFAULT_PROD_URL;
+  }
+
+  // 4. Dev server fallback
+  return DEFAULT_LOCAL_URL;
+};
+
+export const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const customUrl = localStorage.getItem('custom_backend_url');
+    if (customUrl) return customUrl; // 1. Check Network Settings override
+  }
+  return getDefaultUrl(); // 2. Auto-detect or fallback
+};
 
 const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: { 'Content-Type': 'application/json' },
+  baseURL: getApiBaseUrl(),
+  headers: { 'Content-Type': 'application/json' },
 });
 
 export { api };
 
+// ============================================
+// NETWORK SETTINGS API
+// ============================================
+export const networkAPI = {
+    get: async () => {
+        const response = await api.get('/site-information/network-settings');
+        return response.data;
+    },
+    update: async (data) => {
+        const response = await api.put('/site-information/network-settings', data);
+        return response.data;
+    }
+};
+
 // Request interceptor to add auth token
 api.interceptors.request.use(
-    (config) => {
-        if (typeof window !== 'undefined') {
-            const token = localStorage.getItem('token');
-            if (token) {
-                // Send BOTH headers to ensure backend compatibility
-                config.headers['x-auth-token'] = token;
-                config.headers.Authorization = `Bearer ${token}`;
-            }
-        }
-        return config;
-    },
-    (error) => Promise.reject(error)
+  (config) => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        // Send BOTH headers to ensure backend compatibility
+        config.headers['x-auth-token'] = token;
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// ✅ Response interceptor with Auto-Fallback for Network Errors
 api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (typeof window !== 'undefined' && error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-        }
-        return Promise.reject(error);
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If Network Error (server unreachable) and we are using a custom URL
+    if (error.code === 'ERR_NETWORK' && typeof window !== 'undefined' && localStorage.getItem('custom_backend_url') && !originalRequest._retried) {
+      console.warn('⚠️ Custom backend unreachable. Falling back to default server...');
+      
+      localStorage.removeItem('custom_backend_url');
+      localStorage.removeItem('custom_backend_ip');
+      localStorage.removeItem('custom_backend_port');
+      
+      api.defaults.baseURL = getDefaultUrl();
+      
+      originalRequest._retried = true;
+      originalRequest.baseURL = getDefaultUrl();
+      return api(originalRequest);
     }
+    
+    // ✅ FIXED: Only log out on 401s from requests that actually carried a
+    //    token. Anonymous 401s (pre-login page-load calls) must NOT wipe
+    //    the session and force-reload the page.
+    if (typeof window !== 'undefined' && error.response?.status === 401) {
+      const hadToken = !!error.config?.headers?.Authorization;
+      if (hadToken) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    }
+    
+    return Promise.reject(error);
+  }
 );
 
 // ============================================
@@ -53,6 +131,10 @@ export const authAPI = {
     loginStudent: async (credentials) => {
         const response = await api.post('/login/student', credentials);
         return response.data;
+    },
+    registerAdmin: async (registrationData) => {
+        const response = await api.post('/superadmin/register', registrationData);
+        return response.data;
     }
 };
 
@@ -61,23 +143,23 @@ export const authAPI = {
 // ============================================
 export const superAdminAPI = {
     getAllAdmins: async () => {
-        const response = await api.get('/superadmin/admins');
+        const response = await api.get('/superadmin');
         return response.data;
     },
-    createAdmin: async (adminData) => {
-        const response = await api.post('/superadmin/admins', adminData);
+    generateAdminToken: async (tokenData) => {
+        const response = await api.post('/superadmin/generate-token', tokenData);
         return response.data;
     },
     updateAdmin: async (id, adminData) => {
-        const response = await api.put(`/superadmin/admins/${id}`, adminData);
+        const response = await api.put(`/superadmin/${id}`, adminData);
         return response.data;
     },
     toggleAdminStatus: async (id) => {
-        const response = await api.patch(`/superadmin/admins/${id}/toggle-status`);
+        const response = await api.patch(`/superadmin/${id}/toggle`);
         return response.data;
     },
     deleteAdmin: async (id) => {
-        const response = await api.delete(`/superadmin/admins/${id}`);
+        const response = await api.delete(`/superadmin/${id}`);
         return response.data;
     }
 };
@@ -200,11 +282,16 @@ export const studentsAPI = {
         const response = await api.get(`/students/${id}`);
         return response.data;
     },
-    create: async (studentData) => {
-        const { admissionNumber, ...dataToSubmit } = studentData;
-        const response = await api.post('/students', dataToSubmit);
-        return response.data;
-    },
+   create: async (studentData) => {
+    const { admissionNumber, ...dataToSubmit } = studentData;
+    // Only send admissionNumber when explicitly provided (bulk import).
+    // Manual creates leave it out so the backend auto-generates.
+    if (admissionNumber && String(admissionNumber).trim()) {
+      dataToSubmit.admissionNumber = String(admissionNumber).trim();
+    }
+    const response = await api.post('/students', dataToSubmit);
+    return response.data;
+},
     update: async (id, studentData) => {
         const { admissionNumber, ...dataToSubmit } = studentData;
         const response = await api.put(`/students/${id}`, dataToSubmit);
@@ -242,21 +329,17 @@ export const studentsAPI = {
         const response = await api.get('/students/recycle-bin');
         return response.data;
     },
-       restoreFromRecycleBin: async (id) => {
-        // ✅ FIXED: Changed to PUT /students/restore/:id to match backend route
+    restoreFromRecycleBin: async (id) => {
         const response = await api.put(`/students/restore/${id}`);
         return response.data;
     },
-      permanentlyDelete: async (id) => {
-        // ✅ FIXED: URL changed to match the backend route (/students/permanent/:id)
+    permanentlyDelete: async (id) => {
         const response = await api.delete(`/students/permanent/${id}`);
         return response.data;
     },
     uploadProfileImage: async (studentId, file, config = {}) => {
         const formData = new FormData();
         formData.append('profileImage', file);
-
-        // ✅ FIXED: Removed /admin from URL and added transformRequest to handle FormData
         const response = await api.post(`/students/${studentId}/profile-image`, formData, {
             ...config,
             transformRequest: [(data, headers) => {
@@ -267,7 +350,6 @@ export const studentsAPI = {
         return response.data;
     },
     removeProfileImage: async (studentId) => {
-        // ✅ FIXED: Removed /admin from URL
         const response = await api.delete(`/students/${studentId}/profile-image`);
         return response.data;
     },
@@ -463,8 +545,6 @@ export const studentAPI = {
     uploadProfileImage: async (file) => {
         const formData = new FormData();
         formData.append('profileImage', file);
-
-        // ✅ FIXED: Added transformRequest to handle FormData
         const response = await api.post('/student/profile-image', formData, {
             transformRequest: [(data, headers) => {
                 delete headers['Content-Type'];
@@ -1061,7 +1141,6 @@ export const siteInfoAPI = {
         return response.data;
     },
     upsertSiteInfo: async (formData) => {
-        // ✅ FIXED: Added transformRequest to handle FormData properly with Cloudinary
         const response = await api.put('/site-information', formData, {
             transformRequest: [(data, headers) => {
                 delete headers['Content-Type'];
@@ -1070,7 +1149,6 @@ export const siteInfoAPI = {
         });
         return response.data;
     },
-    // ✅ NEW: Delete a single image (Logo, Signature, or Stamp) from Cloudinary
     deleteSingleImage: async (field) => {
         const response = await api.delete(`/site-information/image/${field}`);
         return response.data;
@@ -1345,19 +1423,15 @@ export const eNotesAPI = {
         const response = await api.post('/e-notes/weeks', payload);
         return response.data;
     },
-    
-    // ✅ FIXED: Force Axios to delete the default JSON Content-Type so it accepts FormData
     uploadFiles: async (weekId, formData) => {
         const response = await api.post(`/e-notes/weeks/${weekId}/upload`, formData, {
             transformRequest: [(data, headers) => {
-                // Delete the default JSON content type so the browser sets the multipart boundary
                 delete headers['Content-Type'];
                 return data;
             }]
         });
         return response.data;
     },
-
     deleteFile: async (fileId) => {
         const response = await api.delete(`/e-notes/files/${fileId}`);
         return response.data;

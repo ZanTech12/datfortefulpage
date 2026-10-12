@@ -197,7 +197,7 @@ export default function SiteSettings() {
                     <div style={inputRowStyle}>
                         <div style={inputGroupStyle}>
                             <label style={labelStyle}>Short Name / Acronym</label>
-                            <input type="text" name="shortName" value={formData.shortName} onChange={handleChange} placeholder="e.g. DIS" style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
+                            <input type="text" name="shortName" value={formData.shortName} onChange={handleChange} placeholder="e.g. SCH" style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
                         </div>
                         <div style={inputGroupStyle}>
                             <label style={labelStyle}>School Motto</label>
@@ -212,7 +212,7 @@ export default function SiteSettings() {
                             name="admissionPrefix" 
                             value={formData.admissionPrefix || ''} 
                             onChange={handleChange} 
-                            placeholder="e.g. DIS" 
+                            placeholder="e.g. SCH" 
                             style={{ ...inputStyle, maxWidth: '150px', textTransform: 'uppercase' }} 
                             onFocus={handleFocus} 
                             onBlur={handleBlur} 

@@ -57,6 +57,11 @@ const formatFullDate = (dateString) => {
 };
 
 // ── CSV Parser ──
+// Required: firstName, lastName, email, username ONLY.
+// Optional: password (blank = default below), phone, address,
+// qualification, experience.
+const DEFAULT_CSV_PASSWORD = 'Teacher@123'; // keep in sync with backend POST /teachers
+
 const parseCSV = (text) => {
   const lines = text.split(/\r\n|\n/).filter((l) => l.trim());
   if (lines.length < 2) return { headers: [], rows: [], error: 'CSV must have a header row and at least one data row' };
@@ -83,12 +88,16 @@ const parseCSV = (text) => {
     if (!row.lastname) re.push('Last name required');
     if (!row.email) re.push('Email required');
     if (!row.username) re.push('Username required');
-    if (!row.password) re.push('Password required');
+    // password, phone, address, qualification, experience — all optional
     if (re.length) { errors.push({ row: i + 1, errors: re, data: row }); continue; }
     rows.push({
       firstName: row.firstname || '', lastName: row.lastname || '', email: row.email || '',
-      username: row.username || '', password: row.password || '', phone: row.phone || '',
-      address: row.address || '', qualification: row.qualification || '', experience: parseInt(row.experience) || 0,
+      username: row.username || '',
+      password: row.password || DEFAULT_CSV_PASSWORD, // blank -> default password
+      phone: row.phone || '',
+      address: row.address || '',
+      qualification: row.qualification || '',
+      experience: parseInt(row.experience) || 0,
     });
   }
   return { headers, rows, errors, error: null };

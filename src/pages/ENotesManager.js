@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
     eNotesAPI, 
     getAuthData,
-    API_BASE_URL 
+    getApiBaseUrl // ✅ CHANGED: Import the dynamic function
 } from '../services/api';
 
 const customStyles = `
@@ -431,8 +431,8 @@ export default function ENotesManager() {
                                                 </thead>
                                                 <tbody>
                                                     {week.files.map(file => {
-                                                        // ✅ FIXED: Check if URL is already absolute (from Cloudinary)
-                                                        const fileUrl = file.fileUrl.startsWith('http') ? file.fileUrl : `${API_BASE_URL}${file.fileUrl}`;
+                                                        // ✅ FIXED: Use getApiBaseUrl() for dynamic URL
+                                                        const fileUrl = file.fileUrl.startsWith('http') ? file.fileUrl : `${getApiBaseUrl()}${file.fileUrl}`;
                                                         // ✅ BYPASS CLOUDINARY: Wrap the URL in Google's PDF Viewer to force inline viewing
                                                         const viewUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
                                                         return (

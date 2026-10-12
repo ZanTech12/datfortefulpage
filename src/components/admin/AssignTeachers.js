@@ -96,6 +96,8 @@ const ScrollableSelect = ({
 // ==================== MAIN COMPONENT ====================
 const AssignTeachers = () => {
   const queryClient = useQueryClient();
+  const fileInputRef = useRef(null);
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ teacher_id: '', class_id: '', subject_id: '' });
@@ -104,6 +106,14 @@ const AssignTeachers = () => {
   const [searchTeacher, setSearchTeacher] = useState('');
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
   const [openActionMenu, setOpenActionMenu] = useState(null);
+
+  // CSV import state
+  const [showCSVModal, setShowCSVModal] = useState(false);
+  const [parsedAssignments, setParsedAssignments] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importLog, setImportLog] = useState([]);
+  const [csvError, setCsvError] = useState('');
 
   const { data: teachersData, isLoading: teachersLoading } = useQuery({ queryKey: ['teachers-list'], queryFn: dashboardAPI.getTeachers });
   const { data: classesData, isLoading: classesLoading } = useQuery({ queryKey: ['classes-list'], queryFn: dashboardAPI.getClasses });
@@ -182,6 +192,12 @@ const AssignTeachers = () => {
     }
   }, [openActionMenu]);
 
+  // Lock page scroll while the CSV modal is open
+  useEffect(() => {
+    document.body.style.overflow = showCSVModal ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [showCSVModal]);
+
   const resetForm = () => { setFormData({ teacher_id: '', class_id: '', subject_id: '' }); setEditingId(null); setShowForm(false); };
 
   const handleEdit = (assignment) => {
@@ -202,14 +218,12 @@ const AssignTeachers = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isDuplicate) { showNotif('error', 'This teacher is already assigned to this class and subject!'); return; }
-    
-    const payload = {
-      teacher_id: parseInt(formData.teacher_id),
-      class_id: parseInt(formData.class_id),
-      subject_id: parseInt(formData.subject_id)
-    };
-    
-    assignmentMutation.mutate(payload);
+    // FIX: send the raw string IDs - parseInt() truncates MongoDB ObjectIds
+    assignmentMutation.mutate({
+      teacher_id: formData.teacher_id,
+      class_id: formData.class_id,
+      subject_id: formData.subject_id
+    });
   };
 
   const showNotif = (type, message) => {
@@ -235,6 +249,312 @@ const AssignTeachers = () => {
     return `${assignments.length} assignments`;
   };
 
+  // ==================== CSV EXPORT ====================
+  const exportAssignmentsCSV = () => {
+    const hasFilters = !!(filterClass || filterSubject || searchTeacher);
+    const dataToExport = hasFilters ? filteredAssignments : assignments;
+
+    if (dataToExport.length === 0) {
+      showNotif('error', 'No assignments available to export.');
+      return;
+    }
+
+    const escapeCSV = (value) => {
+      const stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const headers = ['#', 'Teacher Name', 'Teacher Email', 'Class', 'Subject', 'Questions', 'Date Assigned'];
+    const rows = dataToExport.map((a, index) => [
+      index + 1,
+      a.teacher_name || '',
+      a.teacher_email || '',
+      a.class_name || '',
+      a.subject_name || '',
+      a.question_count || 0,
+      a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''
+    ]);
+
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(row => row.map(escapeCSV).join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filterSuffix = hasFilters ? '_filtered' : '';
+    link.setAttribute('download', `teacher_assignments${filterSuffix}_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showNotif('success', `Exported ${dataToExport.length} assignment(s).`);
+  };
+
+  // ==================== CSV IMPORT ====================
+
+  // Proper CSV line parser - respects quoted fields
+  const parseCSVLine = (line) => {
+    const fields = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') { current += '"'; i++; }
+          else inQuotes = false;
+        } else current += ch;
+      } else {
+        if (ch === '"') inQuotes = true;
+        else if (ch === ',') { fields.push(current); current = ''; }
+        else current += ch;
+      }
+    }
+    fields.push(current);
+    return fields.map(f => f.trim());
+  };
+
+  const downloadAssignmentSampleCSV = () => {
+    const csvContent = [
+      'Teacher,ClassName,Section,Subject',
+      'John Doe,JSS 1,A,Mathematics',
+      'jdoe,JSS 2,B,Basic Science',
+      'jane.smith@school.com,SSS 1,A,MATH',
+      'Sam Okon,SSS1 A,,English Language' // combined "Name Section" format also works
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'assignment_upload_format.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenCSVModal = () => {
+    setParsedAssignments([]);
+    setImportLog([]);
+    setCsvError('');
+    setImportProgress({ current: 0, total: 0 });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowCSVModal(true);
+  };
+
+  const handleCloseCSVModal = () => {
+    if (isImporting) return;
+    setShowCSVModal(false);
+    setParsedAssignments([]);
+    setImportLog([]);
+    setCsvError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // =====================================================
+  // UPDATED MATCHERS (whitespace/format tolerant)
+  // =====================================================
+
+  // Collapses multiple spaces, trims, and lowercases - fixes the
+  // "Babatunde  Kayode" (double space) vs "Babatunde Kayode" mismatch
+  const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  // Matches a teacher by full name, username, or email.
+  // Tolerates extra/trailing spaces in the database names,
+  // and also tries reversed name order (e.g. "Kayode Babatunde").
+  const matchTeacher = (value) => {
+    if (!value) return null;
+    const v = normalize(value);
+
+    // Forward name order: "Babatunde Kayode"
+    const fullMatches = teachers.filter(t => normalize(`${t.firstName} ${t.lastName}`) === v);
+    if (fullMatches.length === 1) return fullMatches[0];
+    if (fullMatches.length > 1) {
+      return { error: `multiple teachers named "${value}" - use username or email instead` };
+    }
+
+    // Reversed name order: "Kayode Babatunde"
+    const reversedMatches = teachers.filter(t => normalize(`${t.lastName} ${t.firstName}`) === v);
+    if (reversedMatches.length === 1) return reversedMatches[0];
+
+    // Username or email
+    return teachers.find(t => normalize(t.username) === v || normalize(t.email) === v) || null;
+  };
+
+  // Matches a class THREE ways:
+  //   1) Separate ClassName + Section columns ("JSS 2" / "A")
+  //   2) One combined value: "JSS 2 A" or "JSS 2 - A"
+  //   3) Name only, if unambiguous
+  // All comparisons are whitespace/case-tolerant.
+  const matchClass = (nameValue, sectionValue) => {
+    if (!nameValue) return null;
+    const raw = normalize(nameValue);
+    const sec = normalize(sectionValue);
+
+    // 1) Explicit ClassName + Section columns
+    if (sec) {
+      const found = classes.find(c => normalize(c.name) === raw && normalize(c.section) === sec);
+      if (found) return found;
+    }
+
+    // 2) Single combined value: "JSS 2 A" or "JSS 2 - A"
+    const combined = raw.replace(/\s*-\s*/g, ' ');
+    const byCombined = classes.find(c => normalize(`${c.name} ${c.section || ''}`) === combined);
+    if (byCombined) return byCombined;
+
+    // 3) Name only - must be unambiguous
+    const matches = classes.filter(c => normalize(c.name) === raw);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      return { error: `multiple classes named "${nameValue}" - include the section (e.g. "${matches[0].name} ${matches[0].section}")` };
+    }
+
+    // 4) Helpful hint: same class name exists but with a different section
+    const lastSpace = raw.lastIndexOf(' ');
+    if (lastSpace > 0) {
+      const possibleName = raw.slice(0, lastSpace);
+      const sameName = classes.filter(c => normalize(c.name) === possibleName);
+      if (sameName.length > 0) {
+        const sections = sameName.map(c => c.section).filter(Boolean).join(', ');
+        return { error: `Class "${nameValue}" not found - "${possibleName}" exists but only with section(s): ${sections}` };
+      }
+    }
+
+    return null;
+  };
+
+  // Matches a subject by name or code, whitespace/case-tolerant
+  const matchSubject = (value) => {
+    if (!value) return null;
+    const v = normalize(value);
+    return subjects.find(s => normalize(s.name) === v || normalize(s.code) === v) || null;
+  };
+
+  const handleCSVFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.endsWith('.csv')) {
+      setCsvError('Invalid file type. Please upload a .csv file.');
+      setParsedAssignments([]);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = String(event.target.result).replace(/^\ufeff/, '');
+        const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
+        if (lines.length < 2) { setCsvError('CSV file is empty or missing data rows.'); return; }
+        const rawHeaders = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
+        const getVal = (row, possibleKeys) => {
+          const foundKey = possibleKeys.find(k => rawHeaders.includes(k));
+          return foundKey ? (row[rawHeaders.indexOf(foundKey)] || '').trim() : '';
+        };
+
+        // Existing assignments as "teacher|class|subject" keys for duplicate detection
+        const existingKeys = new Set(assignments.map(a => {
+          const t = a.teacher_id?._id || a.teacherId?._id;
+          const c = a.class_id?._id || a.classId?._id;
+          const s = a.subject_id?._id || a.subjectId?._id;
+          return `${t}|${c}|${s}`;
+        }));
+        const seenKeys = new Set();
+
+        const mapped = [];
+        const errors = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const values = parseCSVLine(lines[i]);
+          if (values.length < 2 || !values[0]) continue;
+
+          const teacherRaw = getVal(values, ['teacher', 'teacher name', 'class teacher', 'teacher username', 'teacher email']);
+          const className = getVal(values, ['classname', 'class_name', 'class name', 'class']);
+          const section = getVal(values, ['section', 'sec', 'class section']);
+          const subjectRaw = getVal(values, ['subject', 'subject name', 'subject code']);
+
+          if (!teacherRaw) { errors.push(`Row ${i + 1}: Teacher is required (name, username or email).`); continue; }
+          const teacher = matchTeacher(teacherRaw);
+          if (!teacher || teacher.error) {
+            errors.push(`Row ${i + 1}: ${teacher?.error || `Teacher "${teacherRaw}" not found in system.`}`);
+            continue;
+          }
+
+          const cls = matchClass(className, section);
+          if (!cls || cls.error) {
+            errors.push(`Row ${i + 1}: ${cls?.error || `Class "${className}${section ? ' - ' + section : ''}" not found in system.`}`);
+            continue;
+          }
+
+          const subject = matchSubject(subjectRaw);
+          if (!subject) {
+            errors.push(`Row ${i + 1}: Subject "${subjectRaw}" not found (matched by name or code).`);
+            continue;
+          }
+
+          const tId = String(teacher._id || teacher.id);
+          const cId = String(cls._id || cls.id);
+          const sId = String(subject._id || subject.id);
+          const key = `${tId}|${cId}|${sId}`;
+
+          if (existingKeys.has(key)) {
+            errors.push(`Row ${i + 1}: ${teacher.firstName} ${teacher.lastName} is already assigned to ${cls.name}${cls.section ? ' - ' + cls.section : ''} / ${subject.name}.`);
+          } else if (seenKeys.has(key)) {
+            errors.push(`Row ${i + 1}: Duplicate row within this file (same teacher/class/subject).`);
+          }
+          seenKeys.add(key);
+
+          mapped.push({
+            teacher_id: tId,
+            class_id: cId,
+            subject_id: sId,
+            _rowNumber: i + 1,
+            _teacherName: `${teacher.firstName} ${teacher.lastName}`,
+            _classLabel: `${cls.name}${cls.section ? ' - ' + cls.section : ''}`,
+            _subjectName: subject.name
+          });
+        }
+        setCsvError(errors.join(' | '));
+        setParsedAssignments(mapped);
+      } catch (err) {
+        console.error(err);
+        setCsvError('Failed to parse CSV file. Ensure it is formatted correctly.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportAssignments = async () => {
+    if (parsedAssignments.length === 0) return;
+    setIsImporting(true);
+    setImportLog([]);
+    setImportProgress({ current: 0, total: parsedAssignments.length });
+    let successCount = 0;
+    let failCount = 0;
+    for (const a of parsedAssignments) {
+      const { _rowNumber, _teacherName, _classLabel, _subjectName, ...payload } = a;
+      try {
+        await dashboardAPI.createTeacherAssignment(payload);
+        successCount++;
+        setImportLog(prev => [...prev, `✅ Row ${_rowNumber}: ${_teacherName} → ${_classLabel} / ${_subjectName}`]);
+      } catch (err) {
+        failCount++;
+        setImportLog(prev => [...prev, `❌ Row ${_rowNumber}: Failed (${err.response?.data?.message || 'Unknown error'})`]);
+      }
+      setImportProgress(prev => ({ ...prev, current: prev.current + 1 }));
+    }
+    setIsImporting(false);
+    queryClient.invalidateQueries({ queryKey: ['teacher-assignments'] });
+    setImportLog(prev => [...prev, `--- Import Complete: ${successCount} succeeded, ${failCount} failed ---`]);
+    if (failCount === 0) {
+      showNotif('success', `Imported ${successCount} assignment(s)!`);
+    } else {
+      showNotif('error', `${failCount} of ${parsedAssignments.length} rows failed - see the log for details.`);
+    }
+  };
+
   if (teachersLoading || classesLoading || subjectsLoading || assignmentsLoading) return <Loading message="Loading assignments..." />;
 
   return (
@@ -255,6 +575,8 @@ const AssignTeachers = () => {
         .at-btn:active { transform: scale(0.97); }
         .at-btn-primary { background: var(--primary); color: #fff; }
         .at-btn-primary:hover { background: var(--primary-hover); }
+        .at-btn-success { background: var(--success); color: #fff; }
+        .at-btn-success:hover { background: #059669; }
         .at-btn-ghost { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); }
         .at-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; }
         .at-btn-danger { background: var(--danger); color: #fff; }
@@ -263,6 +585,34 @@ const AssignTeachers = () => {
         .at-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
         .at-btn-icon { padding: 8px; min-width: 36px; justify-content: center; }
         .at-btn-icon svg { width: 16px; height: 16px; }
+
+        /* ===== MODAL ===== */
+        .at-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: flex-end; justify-content: center; animation: atFade 0.2s ease; }
+        @keyframes atFade { from { opacity: 0; } to { opacity: 1; } }
+        .at-modal { background: var(--surface); border-radius: 20px 20px 0 0; width: 100%; max-width: 700px; max-height: 90vh; display: flex; flex-direction: column; animation: atSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); border: 1px solid var(--border); border-bottom: none; }
+        @keyframes atSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .at-modal-handle { width: 36px; height: 4px; border-radius: 2px; background: #cbd5e1; margin: 10px auto 0; flex-shrink: 0; }
+        .at-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 0; flex-shrink: 0; }
+        .at-modal-title { font-size: 1.1rem; font-weight: 700; color: var(--text); margin: 0; }
+        .at-modal-close { width: 32px; height: 32px; border-radius: 50%; border: none; background: #f1f5f9; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 1.2rem; transition: all var(--transition); }
+        .at-modal-close:hover { background: #e2e8f0; color: var(--text); }
+        .at-modal-body { padding: 20px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+        .at-modal-footer { display: flex; gap: 10px; padding: 0 20px 24px; justify-content: flex-end; flex-wrap: wrap; flex-shrink: 0; }
+        @media (min-width: 768px) {
+          .at-modal-overlay { align-items: center; }
+          .at-modal { border-radius: 20px; border-bottom: 1px solid var(--border); }
+          .at-modal-handle { display: none; }
+        }
+
+        /* ===== CSV IMPORT STYLES ===== */
+        .at-progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+        .at-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s ease; }
+        .at-upload-log { max-height: 160px; overflow-y: auto; background: #f8fafc; padding: 12px; border-radius: var(--radius-sm); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.76rem; line-height: 1.6; color: var(--text-secondary); }
+        .at-upload-preview { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+        .at-upload-preview table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .at-upload-preview th { padding: 8px 10px; text-align: left; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); background: #f8fafc; position: sticky; top: 0; }
+        .at-upload-preview td { padding: 7px 10px; border-top: 1px solid var(--border); }
+        .at-file-input { width: 100%; padding: 10px; border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); font-size: 0.85rem; box-sizing: border-box; background: var(--surface); cursor: pointer; }
 
         /* ===== STATS BAR ===== */
         .at-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -442,7 +792,7 @@ const AssignTeachers = () => {
           .at-form-row { grid-template-columns: 1fr; gap: 14px; }
           .at-form-header, .at-form-body { padding-left: 16px; padding-right: 16px; }
           .at-table-section { display: none !important; }
-          .at-cards { display: flex !important; } /* 👈 FIX: SHOW CARDS ON MOBILE */
+          .at-cards { display: flex !important; } /* FIX: SHOW CARDS ON MOBILE */
           .at-toast { left: 16px; right: 16px; max-width: none; top: 12px; }
         }
 
@@ -481,6 +831,15 @@ const AssignTeachers = () => {
             <p className="at-header-sub">Assign teachers to classes &amp; subjects for question setting</p>
           </div>
           <div className="at-header-actions">
+            <button className="at-btn at-btn-ghost" onClick={exportAssignmentsCSV} disabled={!assignments.length}
+              title={filterClass || filterSubject || searchTeacher ? 'Export filtered assignments' : 'Export all assignments'}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:15,height:15}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Export</span>
+            </button>
+            <button className="at-btn at-btn-success" onClick={handleOpenCSVModal}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:15,height:15}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>Upload CSV</span>
+            </button>
             <button className={`at-btn ${showForm ? 'at-btn-ghost' : 'at-btn-primary'}`} onClick={() => showForm ? resetForm() : setShowForm(true)}>
               {showForm ? (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{width:15,height:15}}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -759,6 +1118,78 @@ const AssignTeachers = () => {
           </div>
         ))}
       </div>
+
+      {/* ===== MODAL: CSV IMPORT ===== */}
+      {showCSVModal && (
+        <div className="at-modal-overlay" onClick={handleCloseCSVModal}>
+          <div className="at-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="at-modal-handle" />
+            <div className="at-modal-header">
+              <h3 className="at-modal-title">Bulk Upload Assignments</h3>
+              <button className="at-modal-close" onClick={handleCloseCSVModal} disabled={isImporting}>×</button>
+            </div>
+            <div className="at-modal-body">
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Teacher: name, username or email. Class: "Name,Section" columns OR one combined "Name Section" value. Subject: name or code.
+                </span>
+                <button type="button" className="at-btn at-btn-ghost at-btn-sm" onClick={downloadAssignmentSampleCSV}>Download Sample</button>
+              </div>
+              <input type="file" accept=".csv" className="at-file-input" ref={fileInputRef} onChange={handleCSVFileChange} disabled={isImporting} />
+
+              {csvError && (
+                <div className="at-form-alert at-form-alert-error" style={{ marginTop: 12 }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:16,height:16,flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                  <span>{csvError}</span>
+                </div>
+              )}
+
+              {parsedAssignments.length > 0 && (
+                <div className="at-upload-preview" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead>
+                      <tr><th>Row</th><th>Teacher</th><th>Class</th><th>Subject</th></tr>
+                    </thead>
+                    <tbody>
+                      {parsedAssignments.map(a => (
+                        <tr key={a._rowNumber}>
+                          <td>{a._rowNumber}</td>
+                          <td>{a._teacherName}</td>
+                          <td>{a._classLabel}</td>
+                          <td>{a._subjectName}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {isImporting && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="at-progress-bar">
+                    <div className="at-progress-fill" style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }} />
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 6 }}>
+                    Importing {importProgress.current} of {importProgress.total}...
+                  </p>
+                </div>
+              )}
+
+              {importLog.length > 0 && (
+                <div className="at-upload-log" style={{ marginTop: 12 }}>
+                  {importLog.map((log, i) => <div key={i}>{log}</div>)}
+                </div>
+              )}
+            </div>
+            <div className="at-modal-footer">
+              <button className="at-btn at-btn-ghost" onClick={handleCloseCSVModal} disabled={isImporting}>Close</button>
+              <button className="at-btn at-btn-success" onClick={handleImportAssignments} disabled={parsedAssignments.length === 0 || isImporting}>
+                {isImporting ? <><span className="at-spinner"></span> Importing...</> : `Import ${parsedAssignments.length} Assignment(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,11 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { subjectsAPI } from '../../api';
 import Loading from '../common/Loading';
 
 const ManageSubjects = () => {
   const queryClient = useQueryClient();
+  const fileInputRef = useRef(null); // NEW: CSV file input
+
   const [showModal, setShowModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false); // NEW
   const [editingSubject, setEditingSubject] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [openActionMenu, setOpenActionMenu] = useState(null);
@@ -16,6 +19,13 @@ const ManageSubjects = () => {
     description: '',
   });
   const [error, setError] = useState('');
+
+  // NEW: CSV import state
+  const [parsedSubjects, setParsedSubjects] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [uploadLog, setUploadLog] = useState([]);
+  const [csvError, setCsvError] = useState('');
 
   useEffect(() => {
     const handleClickOutside = () => setOpenActionMenu(null);
@@ -53,6 +63,155 @@ const ManageSubjects = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['subjects'] }),
     onError: (err) => alert(err.response?.data?.message || 'Failed to delete subject'),
   });
+
+  // =====================================================
+  // NEW: CSV IMPORT
+  // =====================================================
+
+  // Proper CSV line parser — respects quoted fields, so descriptions
+  // containing commas (e.g. "waves, electricity") don't break columns
+  const parseCSVLine = (line) => {
+    const fields = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') { current += '"'; i++; }
+          else inQuotes = false;
+        } else {
+          current += ch;
+        }
+      } else {
+        if (ch === '"') inQuotes = true;
+        else if (ch === ',') { fields.push(current); current = ''; }
+        else current += ch;
+      }
+    }
+    fields.push(current);
+    return fields.map(f => f.trim());
+  };
+
+  const downloadSampleCSV = () => {
+    const csvContent = [
+      'Name,Code,Class Level,Description',
+      'Mathematics,MATH,All,Core subject covering algebra and geometry',
+      'English Language,ENG,All,"Language arts, comprehension and composition"',
+      'Basic Science,BSC,JSS,Introductory science for junior secondary classes',
+      'Physics,PHY,SSS,"Mechanics, waves, electricity and magnetism"',
+      'Yoruba,YOR,All,Nigerian indigenous language studies'
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'subject_upload_format.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenUploadModal = () => {
+    setParsedSubjects([]);
+    setUploadLog([]);
+    setCsvError('');
+    setUploadProgress({ current: 0, total: 0 });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowUploadModal(true);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.endsWith('.csv')) {
+      setCsvError('Invalid file type. Please upload a .csv file.');
+      setParsedSubjects([]);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = String(event.target.result).replace(/^\ufeff/, ''); // strip BOM
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        if (lines.length < 2) { setCsvError('CSV file is empty or missing data rows.'); return; }
+        const rawHeaders = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
+        const getVal = (row, possibleKeys) => {
+          const foundKey = possibleKeys.find(k => rawHeaders.includes(k));
+          return foundKey ? (row[rawHeaders.indexOf(foundKey)] || '').trim() : '';
+        };
+        const existingCodes = new Set((subjects?.data || []).map(s => (s.code || '').toUpperCase()));
+        const seenCodes = new Set();
+        const mappedData = [];
+        const errors = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const values = parseCSVLine(lines[i]);
+          if (values.length < 2 || !values[0]) continue;
+
+          const name = getVal(values, ['name', 'subject name', 'subjectname', 'subject']);
+          const code = getVal(values, ['code', 'subject code', 'subjectcode']);
+          const classLevel = getVal(values, ['classlevel', 'class_level', 'class level', 'level']);
+          const description = getVal(values, ['description', 'desc']);
+
+          if (!name) { errors.push(`Row ${i + 1}: Missing Subject Name.`); continue; }
+          if (!code) { errors.push(`Row ${i + 1}: Missing Subject Code.`); continue; }
+
+          // Normalize code to uppercase (matches the Add form convention)
+          const normalizedCode = code.toUpperCase();
+
+          // Duplicate checks — code is the unique field in the schema
+          if (existingCodes.has(normalizedCode)) {
+            errors.push(`Row ${i + 1}: Code "${normalizedCode}" already exists in the system.`);
+          } else if (seenCodes.has(normalizedCode)) {
+            errors.push(`Row ${i + 1}: Duplicate code "${normalizedCode}" within this file.`);
+          }
+          seenCodes.add(normalizedCode);
+
+          mappedData.push({
+            name,
+            code: normalizedCode,
+            classLevel,
+            description,
+            _rowNumber: i + 1
+          });
+        }
+        setCsvError(errors.join(' | '));
+        setParsedSubjects(mappedData);
+      } catch (err) {
+        console.error(err);
+        setCsvError('Failed to parse CSV file. Ensure it is formatted correctly.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkUpload = async () => {
+    if (parsedSubjects.length === 0) return;
+    setIsUploading(true);
+    setUploadLog([]);
+    setUploadProgress({ current: 0, total: parsedSubjects.length });
+    let successCount = 0;
+    let failCount = 0;
+    for (const subject of parsedSubjects) {
+      const { _rowNumber, ...payload } = subject;
+      try {
+        await subjectsAPI.create(payload);
+        successCount++;
+        setUploadLog(prev => [...prev, `✅ Row ${_rowNumber}: ${subject.name} (${subject.code}) added`]);
+      } catch (err) {
+        failCount++;
+        setUploadLog(prev => [...prev, `❌ Row ${_rowNumber}: Failed (${err.response?.data?.message || 'Unknown error'})`]);
+      }
+      setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
+    }
+    setIsUploading(false);
+    queryClient.invalidateQueries({ queryKey: ['subjects'] });
+    setUploadLog(prev => [...prev, `--- Import Complete: ${successCount} succeeded, ${failCount} failed ---`]);
+  };
+
+  // ===== END NEW: CSV IMPORT =====
 
   const filteredSubjects = useMemo(() => {
     if (!subjects?.data) return [];
@@ -186,6 +345,8 @@ const ManageSubjects = () => {
         .su-btn:active { transform: scale(0.97); }
         .su-btn-primary { background: var(--primary); color: #fff; }
         .su-btn-primary:hover { background: var(--primary-hover); }
+        .su-btn-success { background: var(--success); color: #fff; }
+        .su-btn-success:hover { background: #059669; }
         .su-btn-ghost { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); }
         .su-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; }
         .su-btn-danger { background: var(--danger); color: #fff; }
@@ -295,6 +456,16 @@ const ManageSubjects = () => {
         .su-alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; font-weight: 500; display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
         .su-alert-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 
+        /* ===== CSV IMPORT STYLES (NEW) ===== */
+        .su-progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+        .su-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s ease; }
+        .su-upload-log { max-height: 160px; overflow-y: auto; background: #f8fafc; padding: 12px; border-radius: var(--radius-sm); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.76rem; line-height: 1.6; color: var(--text-secondary); }
+        .su-upload-preview { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+        .su-upload-preview table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .su-upload-preview th { padding: 8px 10px; text-align: left; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); background: #f8fafc; position: sticky; top: 0; }
+        .su-upload-preview td { padding: 7px 10px; border-top: 1px solid var(--border); }
+        .su-file-input { width: 100%; padding: 10px; border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); font-size: 0.85rem; box-sizing: border-box; background: var(--surface); cursor: pointer; }
+
         /* ===== RESPONSIVE ===== */
         @media (min-width: 768px) {
           .su-modal-overlay { align-items: center; }
@@ -344,6 +515,10 @@ const ManageSubjects = () => {
             <p className="su-header-sub">Manage subjects &amp; curriculum</p>
           </div>
           <div className="su-header-actions">
+            <button className="su-btn su-btn-success" onClick={handleOpenUploadModal}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:15,height:15}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>Upload CSV</span>
+            </button>
             <button className="su-btn su-btn-primary" onClick={handleOpenCreate}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{width:15,height:15}}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               <span>Add Subject</span>
@@ -548,6 +723,70 @@ const ManageSubjects = () => {
                 {createMutation.isPending || updateMutation.isPending ? (
                   <><span className="su-spinner"></span> Saving...</>
                 ) : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: CSV UPLOAD (NEW) ===== */}
+      {showUploadModal && (
+        <div className="su-modal-overlay" onClick={() => !isUploading && setShowUploadModal(false)}>
+          <div className="su-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="su-modal-handle" />
+            <div className="su-modal-header">
+              <h3 className="su-modal-title">Bulk Upload Subjects</h3>
+              <button className="su-modal-close" onClick={() => !isUploading && setShowUploadModal(false)} disabled={isUploading}>×</button>
+            </div>
+            <div className="su-modal-body">
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span className="su-form-hint">Codes are auto-uppercased and must be unique. Quote descriptions containing commas.</span>
+                <button type="button" className="su-btn su-btn-ghost su-btn-sm" onClick={downloadSampleCSV}>Download Sample</button>
+              </div>
+              <input type="file" accept=".csv" className="su-file-input" ref={fileInputRef} onChange={handleFileChange} disabled={isUploading} />
+
+              {csvError && <div className="su-alert su-alert-danger" style={{ marginTop: 12, marginBottom: 0 }}>{csvError}</div>}
+
+              {parsedSubjects.length > 0 && (
+                <div className="su-upload-preview" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead>
+                      <tr><th>Row</th><th>Name</th><th>Code</th><th>Level</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                      {parsedSubjects.map(s => (
+                        <tr key={s._rowNumber}>
+                          <td>{s._rowNumber}</td>
+                          <td>{s.name}</td>
+                          <td style={{ fontFamily: "'SF Mono', monospace", fontWeight: 600 }}>{s.code}</td>
+                          <td>{s.classLevel || '—'}</td>
+                          <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {isUploading && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="su-progress-bar">
+                    <div className="su-progress-fill" style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }} />
+                  </div>
+                  <p className="su-form-hint" style={{ marginTop: 6 }}>Uploading {uploadProgress.current} of {uploadProgress.total}...</p>
+                </div>
+              )}
+
+              {uploadLog.length > 0 && (
+                <div className="su-upload-log" style={{ marginTop: 12 }}>
+                  {uploadLog.map((log, i) => <div key={i}>{log}</div>)}
+                </div>
+              )}
+            </div>
+            <div className="su-modal-footer">
+              <button className="su-btn su-btn-ghost" onClick={() => !isUploading && setShowUploadModal(false)} disabled={isUploading}>Close</button>
+              <button className="su-btn su-btn-success" onClick={handleBulkUpload} disabled={parsedSubjects.length === 0 || isUploading}>
+                {isUploading ? <><span className="su-spinner"></span> Importing...</> : `Import ${parsedSubjects.length} Subject(s)`}
               </button>
             </div>
           </div>
