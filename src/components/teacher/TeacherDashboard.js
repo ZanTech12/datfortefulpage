@@ -167,20 +167,20 @@ const getDeviceIcon = (userAgent) => {
 const TeacherDashboard = () => {
   const { user } = getAuthData();
 
-  const { data: assignments, isLoading: loadingAssignments } = useQuery({
+  const { data: assignments } = useQuery({
     queryKey: ['teacher-assignments', user?._id],
     queryFn: () => dashboardAPI.getAssignmentsByTeacher(user?._id),
     enabled: !!user?._id,
   });
 
-  const { data: tests, isLoading: loadingTests } = useQuery({
+  const { data: tests } = useQuery({
     queryKey: ['teacher-tests', user?._id],
     queryFn: () => testsAPI.getByTeacher(user?._id),
     enabled: !!user?._id,
   });
 
   /* ── Fetch CA entry stats from backend ── */
-  const { data: caStats, isLoading: loadingCA } = useQuery({
+  const { data: caStats } = useQuery({
     queryKey: ['teacher-ca-stats', user?._id],
     queryFn: () => teacherCAAPI.getCASubjectsCount(),
     enabled: !!user?._id,

@@ -1,5 +1,4 @@
 import React from 'react';
-import { submissionsAPI } from '../../api';
 
 const TeacherSubmissions = () => {
   // Placeholder component - Reuses your existing submissions logic if needed

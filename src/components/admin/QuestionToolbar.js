@@ -265,11 +265,6 @@ const QuestionToolbar = ({
     { label: "Image", buttons: [] },
   ];
 
-  const btnClass =
-    "px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[13px] font-bold " +
-    "text-slate-600 hover:bg-slate-100 hover:border-slate-400 active:bg-slate-200 " +
-    "transition disabled:opacity-50";
-
   const Separator = () => <span className="qtb__sep" aria-hidden="true" />;
 
   /* ============================================================
