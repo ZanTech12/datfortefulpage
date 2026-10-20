@@ -18,6 +18,7 @@ const ManageStudents = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClass, setFilterClass] = useState('');   // ✅ NEW: class filter
   const [openActionMenu, setOpenActionMenu] = useState(null);
+  const [menuPos, setMenuPos] = useState(null); // ✅ NEW: smart position for action menu
   const [imageUploadStudentId, setImageUploadStudentId] = useState(null);
   const [cameraFacingMode, setCameraFacingMode] = useState('user');
   const [cameraReady, setCameraReady] = useState(false);
@@ -163,6 +164,7 @@ const ManageStudents = () => {
   const handleOpenCamera = (studentId, e) => {
     if (e) e.stopPropagation();
     setOpenActionMenu(null);
+    setMenuPos(null); // ✅ clear menu position
     setImageUploadStudentId(studentId);
     setCameraFacingMode('user');
     setShowCameraModal(true);
@@ -220,10 +222,7 @@ const ManageStudents = () => {
     if (!students?.data) return [];
     let list = students.data;
 
-    // ✅ NEW: Class filter — applies FIRST, then the search term narrows
-    // within it (both filters must match — same as your AssignTeachers bar)
     if (filterClass === 'none') {
-      // "Not Assigned" — students with no class
       list = list.filter((student) => {
         const studentClassId = student.classId?._id || student.classId?.id || student.classId;
         return studentClassId === null || studentClassId === undefined || studentClassId === '';
@@ -235,7 +234,6 @@ const ManageStudents = () => {
       });
     }
 
-    // Existing search logic — unchanged
     if (!searchTerm.trim()) return list;
     const lowerCaseTerm = searchTerm.toLowerCase();
     return list.filter((student) => {
@@ -268,6 +266,7 @@ const ManageStudents = () => {
   const handleImageClick = (studentId, e) => {
     if (e) e.stopPropagation();
     setOpenActionMenu(null);
+    setMenuPos(null); // ✅ clear menu position
     setImageUploadStudentId(studentId);
     setTimeout(() => imageInputRef.current?.click(), 100);
   };
@@ -301,6 +300,7 @@ const ManageStudents = () => {
   const handleRemoveImage = (studentId, e) => {
     if (e) e.stopPropagation();
     setOpenActionMenu(null);
+    setMenuPos(null); // ✅ clear menu position
     if (window.confirm("Remove this student's profile image?")) {
       removeImageMutation.mutate(studentId);
     }
@@ -310,7 +310,6 @@ const ManageStudents = () => {
   // CSV EXPORT (includes Photo URL + Photo Public ID)
   // =====================================================
   const exportStudentsCSV = () => {
-    // ✅ UPDATED: respects the class filter too (in addition to the search term)
     const dataToExport = (searchTerm.trim() || filterClass) ? filteredStudents : (students?.data || []);
     if (dataToExport.length === 0) {
       setError('No students available to export.');
@@ -355,7 +354,6 @@ const ManageStudents = () => {
   // CSV IMPORT (Admission Number + Photo + Fees flags)
   // =====================================================
 
-  // Proper CSV line parser - respects quoted fields
   const parseCSVLine = (line) => {
     const fields = [];
     let current = '';
@@ -477,7 +475,6 @@ const ManageStudents = () => {
             seenAdmissionNumbers.add(admLower);
           }
 
-          // Self-diagnosing class matching
           let classId = '';
           if (className) {
             const n = normalize(className);
@@ -639,10 +636,67 @@ const ManageStudents = () => {
     if (window.confirm('Are you sure you want to delete this student?')) deleteMutation.mutate(id);
   };
 
+  // ✅ SMART POSITIONING: opens upward when last rows would clip below viewport
   const toggleActionMenu = (id, e) => {
     e.stopPropagation();
-    setOpenActionMenu(openActionMenu === id ? null : id);
+    if (openActionMenu === id) {
+      setOpenActionMenu(null);
+      setMenuPos(null);
+      return;
+    }
+
+    const trigger = e.currentTarget;
+    const rect = trigger.getBoundingClientRect();
+    const MENU_HEIGHT = 270; // 5 items + 2 separators + padding
+    const MENU_WIDTH = 200;
+    const GAP = 4;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    // Open upward if not enough room below AND more room above (last-row case)
+    const openUp = spaceBelow < MENU_HEIGHT && spaceAbove >= spaceBelow;
+
+    const pos = {
+      position: 'fixed',
+      left: Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8)),
+      right: 'auto',
+      zIndex: 9999,
+    };
+
+    if (openUp) {
+      pos.top = 'auto';
+      pos.bottom = window.innerHeight - rect.top + GAP;
+    } else {
+      pos.top = rect.bottom + GAP;
+      pos.bottom = 'auto';
+    }
+
+    // If neither direction has full room, cap with max-height + internal scroll
+    const available = openUp ? spaceAbove - GAP - 8 : spaceBelow - GAP - 8;
+    if (available < MENU_HEIGHT) {
+      pos.maxHeight = Math.max(160, available);
+      pos.overflowY = 'auto';
+    }
+
+    setMenuPos(pos);
+    setOpenActionMenu(id);
   };
+
+  // ✅ NEW: Close the menu when user scrolls or resizes (prevents stranded menus)
+  useEffect(() => {
+    if (!openActionMenu) return;
+    const handleClose = () => {
+      setOpenActionMenu(null);
+      setMenuPos(null);
+    };
+    window.addEventListener('scroll', handleClose, true);
+    window.addEventListener('resize', handleClose);
+    return () => {
+      window.removeEventListener('scroll', handleClose, true);
+      window.removeEventListener('resize', handleClose);
+    };
+  }, [openActionMenu]);
 
   if (studentsLoading || classesLoading) return <Loading message="Loading students..." />;
 
@@ -652,7 +706,6 @@ const ManageStudents = () => {
     return cls ? `${cls.name} - ${cls.section}` : 'Unknown';
   };
 
-  // ✅ UPDATED: counts respect both filters
   const getResultText = () => {
     const hasFilter = searchTerm.trim() || filterClass;
     if (hasFilter && filteredStudents.length !== students?.data?.length) return `Showing ${filteredStudents.length} of ${students?.data?.length}`;
@@ -690,7 +743,6 @@ const ManageStudents = () => {
     );
   };
 
-  // ✅ NEW: sorted class list for the filter dropdown
   const sortedClasses = (classes?.data || [])
     .slice()
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -755,7 +807,7 @@ const ManageStudents = () => {
         .ms-cards { display: none; flex-direction: column; gap: 10px; padding: 12px 16px; }
         .ms-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
         .ms-card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-        .ms-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; letter-spacing: 0.02em; }
+        .ms-avatar { width: 42px; height: 42px; border-radius: '50%'; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; letter-spacing: 0.02em; }
         .ms-card-name { font-weight: 600; font-size: 0.95rem; color: var(--text); line-height: 1.3; }
         .ms-card-adm { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
         .ms-card-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
@@ -772,7 +824,7 @@ const ManageStudents = () => {
         .ms-action-trigger { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all var(--transition); }
         .ms-action-trigger:hover { background: #f8fafc; border-color: #cbd5e1; }
         .ms-action-trigger svg { width: 16px; height: 16px; color: var(--text-muted); }
-        .ms-action-menu { position: absolute; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); min-width: 180px; z-index: 9999; overflow: hidden; animation: msMenuIn 0.15s ease; }
+        .ms-action-menu { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); min-width: 200px; overflow: hidden; animation: msMenuIn 0.15s ease; }
         @keyframes msMenuIn { from { opacity: 0; transform: translateY(-4px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .ms-action-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border: none; background: none; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: background var(--transition); text-align: left; }
         .ms-action-menu-item:hover { background: #f8fafc; }
@@ -878,7 +930,6 @@ const ManageStudents = () => {
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* Image upload progress overlay */}
       {imageUploading && (
         <div className="ms-img-progress-overlay">
           <div className="ms-img-progress-card">
@@ -929,16 +980,13 @@ const ManageStudents = () => {
         </div>
       )}
 
-      {/* ===== SEARCH + CLASS FILTER BAR ===== */}
       <div className="ms-search-bar">
-        {/* Your search field — unchanged */}
         <div className="ms-search-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" className="ms-search-input" placeholder="Search by name or admission no..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           {searchTerm && <button className="ms-search-clear" onClick={() => setSearchTerm('')}>×</button>}
         </div>
 
-        {/* ✅ NEW: Class filter */}
         <select className="ms-filter-select" value={filterClass} onChange={(e) => setFilterClass(e.target.value)} title="Filter by class">
           <option value="">All Classes</option>
           {sortedClasses.map((cls) => (
@@ -954,7 +1002,6 @@ const ManageStudents = () => {
         </span>
       </div>
 
-      {/* ===== DESKTOP TABLE ===== */}
       <div className="ms-table-section" style={{ background: 'var(--surface)', minHeight: '200px' }}>
         <div className="ms-table-wrap">
           <table className="ms-table">
@@ -1014,19 +1061,19 @@ const ManageStudents = () => {
                         <button className="ms-action-trigger" onClick={(e) => toggleActionMenu(studentId, e)}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                         </button>
-                        {openActionMenu === studentId && (
+                        {openActionMenu === studentId && menuPos && (
                           <>
-                            <div className="ms-click-outside" onClick={() => setOpenActionMenu(null)} />
-                            <div className="ms-action-menu">
-                              <button className="ms-action-menu-item" onClick={(e) => handleOpenCamera(studentId, e)}>📷 Take Photo</button>
-                              <button className="ms-action-menu-item" onClick={(e) => handleImageClick(studentId, e)}>🖼️ Upload Photo</button>
+                            <div className="ms-click-outside" onClick={() => { setOpenActionMenu(null); setMenuPos(null); }} />
+                            <div className="ms-action-menu" style={menuPos}>
+                              <button className="ms-action-menu-item" onClick={(e) => { setOpenActionMenu(null); setMenuPos(null); handleOpenCamera(studentId, e); }}>📷 Take Photo</button>
+                              <button className="ms-action-menu-item" onClick={(e) => { setOpenActionMenu(null); setMenuPos(null); handleImageClick(studentId, e); }}>🖼️ Upload Photo</button>
                               {student.profileImage?.url && (
-                                <button className="ms-action-menu-item danger" onClick={(e) => handleRemoveImage(studentId, e)}>🗑️ Remove Photo</button>
+                                <button className="ms-action-menu-item danger" onClick={(e) => { setOpenActionMenu(null); setMenuPos(null); handleRemoveImage(studentId, e); }}>🗑️ Remove Photo</button>
                               )}
                               <div className="ms-action-menu-sep" />
-                              <button className="ms-action-menu-item" onClick={() => { setOpenActionMenu(null); handleOpenEdit(student); }}>✏️ Edit Student</button>
+                              <button className="ms-action-menu-item" onClick={() => { setOpenActionMenu(null); setMenuPos(null); handleOpenEdit(student); }}>✏️ Edit Student</button>
                               <div className="ms-action-menu-sep" />
-                              <button className="ms-action-menu-item danger" onClick={() => { setOpenActionMenu(null); handleDelete(studentId); }}>🗑️ Delete Student</button>
+                              <button className="ms-action-menu-item danger" onClick={() => { setOpenActionMenu(null); setMenuPos(null); handleDelete(studentId); }}>🗑️ Delete Student</button>
                             </div>
                           </>
                         )}
@@ -1040,7 +1087,6 @@ const ManageStudents = () => {
         </div>
       </div>
 
-      {/* ===== MOBILE CARDS ===== */}
       <div className="ms-cards">
         {filteredStudents.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-muted)' }}>
@@ -1082,7 +1128,6 @@ const ManageStudents = () => {
         })}
       </div>
 
-      {/* ===== MODAL: ADD/EDIT STUDENT ===== */}
       {showModal && (
         <div className="ms-modal-overlay" onClick={handleCloseModal}>
           <div className="ms-modal" onClick={(e) => e.stopPropagation()}>
@@ -1142,7 +1187,6 @@ const ManageStudents = () => {
         </div>
       )}
 
-      {/* ===== MODAL: CSV UPLOAD ===== */}
       {showUploadModal && (
         <div className="ms-modal-overlay" onClick={handleCloseUploadModal}>
           <div className="ms-modal" onClick={(e) => e.stopPropagation()}>
@@ -1212,7 +1256,6 @@ const ManageStudents = () => {
         </div>
       )}
 
-      {/* ===== MODAL: CAMERA ===== */}
       {showCameraModal && (
         <div className="ms-camera-overlay">
           <div className="ms-camera-header">
